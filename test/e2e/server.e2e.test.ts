@@ -24,9 +24,11 @@ import type {
   PublishDiagnosticsParams,
   SemanticTokens,
   SignatureHelp,
+  TextEdit,
 } from 'vscode-languageserver-protocol';
 import { URI } from 'vscode-uri';
 import { VALUE_TARGETS_REQUEST, type ValueTargetsResult } from '../../shared/valuesProtocol';
+import { applyEdits } from '../formatHelpers';
 import { isEntryShader, REAL_LYGIA, REAL_ROOT, REPO, realShaderFiles } from '../realWorkspace';
 
 const ROOT = REAL_ROOT ?? '';
@@ -227,6 +229,24 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     const tokens = await conn.sendRequest<SemanticTokens>('textDocument/semanticTokens/full', { textDocument: { uri: uriOf(SCRATCH) } });
     expect(tokens.data.length).toBeGreaterThan(50);
     expect(tokens.data.length % 5).toBe(0);
+  });
+
+  it('formats documents: whole file, range and on type, with minimal edits', async () => {
+    const rel = '__glsl_lsp_e2e_format__.glsl';
+    const text = ['void f() {', 'float a=1.0;   ', '  if (a > 0.0) {', 'float b    = 2.0;', '}', '}'].join('\n');
+    open(rel, text);
+    const options = { tabSize: 4, insertSpaces: true };
+    const textDocument = { uri: uriOf(rel) };
+    const edits = await conn.sendRequest<TextEdit[]>('textDocument/formatting', { textDocument, options });
+    expect(applyEdits(text, edits)).toBe(['void f() {', '    float a = 1.0;', '    if (a > 0.0) {', '        float b    = 2.0;', '    }', '}', ''].join('\n'));
+    expect(edits.every((e) => e.range.start.line === e.range.end.line)).toBe(true);
+    const range = { start: { line: 3, character: 0 }, end: { line: 3, character: 4 } };
+    const rangeEdits = await conn.sendRequest<TextEdit[]>('textDocument/rangeFormatting', { textDocument, range, options });
+    expect(applyEdits(text, rangeEdits).split('\n')[3]).toBe('        float b    = 2.0;');
+    expect(applyEdits(text, rangeEdits).split('\n')[1]).toBe('float a=1.0;   ');
+    const typed = await conn.sendRequest<TextEdit[]>('textDocument/onTypeFormatting', { textDocument, position: { line: 4, character: 1 }, ch: '}', options });
+    expect(applyEdits(text, typed).split('\n')[4]).toBe('    }');
+    conn.sendNotification('textDocument/didClose', { textDocument });
   });
 
   it('valid shaders produce no errors (fast checks + glslangValidator)', async () => {

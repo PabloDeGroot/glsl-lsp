@@ -1,8 +1,8 @@
 {
   "name": "glsl-lsp",
   "displayName": "GLSL Language Server",
-  "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting and more. Optional Shadertoy support, configurable runtime uniforms, LYGIA aware.",
-  "version": "0.3.0",
+  "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting, formatting and more. Optional Shadertoy support, configurable runtime uniforms, LYGIA aware.",
+  "version": "0.4.0",
   "publisher": "pablodegroot",
   "license": "MIT",
   "author": "Pablo de Groot",
@@ -19,7 +19,8 @@
   },
   "categories": [
     "Programming Languages",
-    "Linters"
+    "Linters",
+    "Formatters"
   ],
   "keywords": [
     "glsl",
@@ -294,6 +295,47 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Update the **Values** panel cursor row as the editor cursor moves. When off, it updates only on `GLSL: Focus Values Panel`."
+        },
+        "glslLsp.format.mode": {
+          "type": "string",
+          "enum": [
+            "conservative",
+            "opinionated",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Only indentation, trailing whitespace, blank-line runs, the final newline, a space after `,` and `;` and around assignments. Other spacing (hand-aligned columns, aligned comments) is never changed.",
+            "Everything conservative does, plus spaces around binary operators and after `if`/`for`/`while`/`switch`/`return`, no space before a call's `(` or inside parentheses and brackets, one space before `{`, and brace placement per `glslLsp.format.braceStyle`.",
+            "No formatting: format requests return no edits."
+          ],
+          "default": "conservative",
+          "markdownDescription": "How much **Format Document** / **Format Selection** / format on type change. Preprocessor lines, comments, `// glsl-format off` ... `// glsl-format on` regions and macro continuation lines are never reformatted. Lines are never wrapped."
+        },
+        "glslLsp.format.maxBlankLines": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "markdownDescription": "Longest run of consecutive blank lines the formatter keeps."
+        },
+        "glslLsp.format.braceStyle": {
+          "type": "string",
+          "enum": [
+            "preserve",
+            "sameLine",
+            "nextLine"
+          ],
+          "enumDescriptions": [
+            "Leave braces where they are.",
+            "`void f() {` and `} else {`.",
+            "`{` on its own line, and `else` on the line after `}`."
+          ],
+          "default": "preserve",
+          "markdownDescription": "Where the `{` of a block goes. Only used when `glslLsp.format.mode` is `opinionated`; one-line blocks and initializer lists never move."
+        },
+        "glslLsp.format.indentPreprocessor": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Indent preprocessor lines (`#ifdef`, `#define`, ...) to the brace depth of the surrounding code. Off: they keep their indentation."
         },
         "glslLsp.trace.server": {
           "type": "string",

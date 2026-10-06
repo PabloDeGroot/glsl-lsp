@@ -17,6 +17,7 @@ server/src/settings.ts         glslLsp.* settings (defaults + change event)
 server/src/core/               pure GLSL knowledge, unit-testable, no vscode imports
 server/src/builtins/           builtin functions/variables/types/keywords/directives data
 server/src/features/<name>.ts  one file per LSP feature, each exports register(ctx)
+server/src/features/format/    the formatter: pure text -> TextEdits, no vscode imports
 syntaxes/, language-configuration.json   TextMate grammar and editor behaviour
 test/                          vitest tests, test/fixtures/ on-disk projects
 docs/VALUES.md                 full design of the Values panel
@@ -333,6 +334,7 @@ tests call directly.
 | `refresh.ts` | semanticTokens / inlayHint refresh requests | `onDependentsChanged` |
 | `folding.ts` | foldingRange, selectionRange | `computeFoldingRanges`, `computeSelectionRanges` |
 | `colors.ts` | documentColor, colorPresentation | `computeDocumentColors`, `computeColorPresentations` |
+| `format.ts` + `format/*` | formatting, rangeFormatting, onTypeFormatting | `formatDocument`, `formatRange`, `formatOnType` (`format/index.ts`) |
 
 ### hover
 
@@ -484,6 +486,54 @@ geometry words (`dir`, `pos`, `normal`...), geometric callees (`normalize`,
 `dot`...) and scalar targets. `formatColorPresentation` keeps the user's constructor and
 number style.
 
+### formatting (`format.ts`, `format/`)
+
+`format.ts` only reads the open document, the request's `FormattingOptions`
+and `settings.format`; everything else is pure text in, edits out, in
+`format/` (works on the core lexer, not the parser, so it formats code the
+parser would reject):
+
+| File | Role |
+| --- | --- |
+| `options.ts` | `resolveFormatOptions(editorOptions, settings)`: tab size, spaces/tabs, the three LSP flags (on unless sent as `false`), mode, `maxBlankLines`, `braceStyle`, `indentPreprocessor` |
+| `lines.ts` | `splitLines` (same line numbering as the lexer: `\r\n`, `\n`, lone `\r`), `visualWidth`, `makeIndent` |
+| `analyze.ts` | one `lex()` pass annotated per line: kind (`code`, `blank`, `directive`, `commentCont`, `directiveCont`, `raw`), format-off regions, `inactive` lines (`#if 0` / `#if false` branches, lines continuing a `//` comment that ends in `\`; also marked off), backslash-continued groups, block vs initializer `{`, unary `+`/`-`, ternary `:`; `tokenSignature` for the token-preservation check |
+| `braces.ts` | opinionated brace placement (`sameLine` joins a lone `{` or `else` onto the previous code line, `nextLine` splits them off); each output line records the original lines it came from |
+| `indent.ts` | the indentation state machine (below) |
+| `spacing.ts` | `conservativeGap` (only adds a space after `,`/`;` and around assignments) and `opinionatedGap` (operators, keywords, calls, brackets, braces); `canJoin` re-lexes two tokens to make sure removing a space cannot merge them (`- -x`) |
+| `layout.ts` | rebuilds each line: indentation, gaps (aligned trailing comments keep their column), trailing whitespace, block comment lines moved with their first line when every line starts with its indentation, blank-line runs, final newline |
+| `index.ts` | pipeline and entry points: `formatText`, `computeFormatEdits` (per group of original lines, trimmed to the changed characters; range formatting keeps only groups entirely inside the range), `computeIndentEdits` (on type) |
+
+Indentation (`computeIndentation`) walks the tokens line by line with a
+bracket stack (`{` block / `{` initializer / `(` / `[`, each block brace
+remembering the level of the statement that opened it), the current
+statement (open/closed, level, first line), a pending body level after an
+un-braced `if`/`for`/`while`/`else`/`do` header, and switch `case` labels.
+Block lines get exact levels. Continuation lines (open parenthesis or
+initializer, previous line cannot end a statement, or the line starts with
+an operator) get `max(original + shift of the statement's first line,
+statement level + 1)`, which keeps hand alignment and is idempotent; un-braced
+bodies use the header level as the minimum. A line that would continue
+after `)` with no operator (a macro statement `FOO(x)` without `;`) starts a
+new statement instead. Comment-only lines continuing an aligned trailing
+comment keep its column; in conservative mode deeper comment lines keep
+their extra indentation. `#if` pushes a snapshot of the whole state,
+`#elif`/`#else` restore it (recording the end of the first compiled branch;
+inactive lines are skipped, so an `#if 0` branch never changes anything),
+`#endif` continues from the end of that branch, or, for a lone branch without
+`#else` that changed the brackets, from the snapshot. Un-braced bodies are
+exactly one level deeper in opinionated mode. `commentCol` (original column
+of each trailing comment) lets `layout.ts` keep a comment aligned with an
+adjacent one at its absolute column. When brackets do not balance
+(`balanced: false`), `layout.ts` keeps every line's original indentation.
+
+Safety: `computeFormatEdits` compares `tokenSignature` before and after and
+returns no edits when they differ. `test/format.test.ts` covers each rule,
+range and on-type formatting, CRLF and tabs, plus a random-input fuzz;
+`test/format.realworld.test.ts` checks token preservation, idempotence (all
+modes) and that conservative output differs only by the listed changes, over
+every `.glsl` file of the real workspace.
+
 ## Values panel (`docs/VALUES.md`)
 
 An Activity Bar container **GLSL** with one webview view `glslLsp.values`:
@@ -575,7 +625,9 @@ doc, a category and unique overloads.
   - `test/diagnostics.realworld.test.ts` runs the fast checks and
     glslangValidator over the workspace's own shaders and expects no errors;
   - `test/autoInclude.test.ts` times completion;
-  - `test/values.server.realworld*.test.ts` scan every position.
+  - `test/values.server.realworld*.test.ts` scan every position;
+  - `test/format.realworld.test.ts` checks the formatter invariants on every
+    `.glsl` file, LYGIA included.
 - `test/environment.test.ts`: environment uniforms/defines through hover,
   completion, typing, semantic tokens, the undeclared check and the glslang
   preamble, and the Shadertoy auto/on/off detection.
@@ -586,6 +638,7 @@ doc, a category and unique overloads.
   - hover shows `//` docs and (with LYGIA) YAML docs;
   - completion with an auto-include edit (with LYGIA);
   - definition, signature help, document symbols and semantic tokens;
+  - formatting: whole document, range and on type;
   - every entry shader in the workspace whose includes resolve has zero
     error diagnostics;
   - a deliberate type error is reported by glslang;

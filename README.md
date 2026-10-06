@@ -113,6 +113,7 @@ The rest of completion is context aware:
 | **Semantic highlighting** | Functions, parameters, globals, uniforms (readonly), struct fields, macros and builtins (`defaultLibrary`). |
 | **Folding and smart selection** | Braces, `#if`/`#else` branches, comment blocks, include runs and `// region` markers. Expand-selection steps out from word to argument, call, statement, block and function. |
 | **Color picker** | On `vec3(1.0, 0.5, 0.2)` style literals that are clearly colors, `#define` color constants and `#iUniform color3` defaults. |
+| **Formatting** | Format document / selection / on type. Conservative by default: indentation and whitespace only, hand-aligned code untouched. See [Formatting](#formatting). |
 | **Syntax highlighting** | TextMate grammar with shader-toy directives, LYGIA doc keys and macro constants. Enter continues `//` and `/** */` comments. |
 
 ### Diagnostics
@@ -224,6 +225,90 @@ The step is the literal's last decimal place (`0.25` steps by `0.01`, `3` by
 If it has never been opened, the value is pinned anyway and the status bar
 says so; open the **GLSL** view to see it.
 
+### Formatting
+
+**Format Document**, **Format Selection** and format on type
+(`editor.formatOnType`: after `}`, `;` and Enter, re-indenting only the
+current line). The default mode is deliberately gentle, so it can run on
+save over hand-tuned shader code:
+
+| `glslLsp.format.mode` | Changes |
+| --- | --- |
+| `conservative` (default) | Indentation by brace and parenthesis depth, trailing whitespace, runs of blank lines (`maxBlankLines`), the final newline, a missing space after `,` and `;` (not inside `for (;;)` or before `}`) and around `=` / `+=` / ... Nothing else: hand-aligned columns, `float a    = 1.0;` padding and aligned trailing comments stay exactly as they are. |
+| `opinionated` | Everything above, plus: spaces around binary operators (not unary `-x`, `1e-3` or `++`/`--`: `a++ + b`), one space after `if`/`for`/`while`/`switch`/`return`, no space before a call's `(` or inside `( )` / `[ ]`, no space before `,` / `;`, one space before `{`, one-line blocks padded (`{ x(); }`), un-braced bodies indented one level, and brace placement per `braceStyle`. |
+| `off` | Format requests return no edits (use another formatter). |
+
+Indentation details (both modes):
+
+- Continuation lines of a multi-line expression or argument list get at
+  least one extra level; deeper hand alignment is kept and moves with the
+  statement:
+
+  ```glsl
+  vec3 c = mix(a,          // stays aligned under `a`
+               b, t);
+  ```
+
+- Bodies of `if`/`for`/`while`/`else`/`do` without braces: opinionated mode
+  indents them one level; conservative mode keeps them at least at the
+  header's level, so stacked loops over one body stay flat.
+- A trailing comment aligned with the one on the line above or below keeps
+  its column even when its line is re-indented (when the code leaves room).
+  Comment-only lines continuing an aligned trailing comment keep its column.
+  In conservative mode, comment lines indented deeper than the code
+  (commented-out code) keep their extra indentation.
+- Lines inside a `/* ... */` block move with the comment's first line, but
+  only when every one of them starts with that line's indentation.
+- `#if`/`#elif`/`#else` branches each start from the depth at `#if`, and
+  `#endif` continues from the end of the first branch, so branches that each
+  open a brace (common in LYGIA) keep the depth right. A lone branch (no
+  `#else`) that changes the depth is undone at `#endif`.
+- `#if 0` / `#if false` branches are not code: they are left exactly as they
+  are and do not count for the depth.
+- A file whose braces or parentheses do not balance keeps its indentation
+  (the other rules still apply).
+
+Never touched: preprocessor lines (trailing whitespace aside; LYGIA include
+guards, `#define`s, shader-toy `#iUniform` / `#iChannel` directives), lines
+continued with `\` (every line of the group; a `//` comment ending in `\`
+continues onto the next line), the text of comments, and everything between
+`// glsl-format off` and `// glsl-format on`:
+
+```glsl
+// glsl-format off
+const mat3 M = mat3( 0.00,  0.80,  0.60,
+                    -0.80,  0.36, -0.48,
+                    -0.60, -0.48,  0.64);
+// glsl-format on
+```
+
+The editor's tab size and spaces/tabs choice are used. `trimTrailingWhitespace`,
+`insertFinalNewline` and `trimFinalNewlines` apply unless the editor sends
+them as `false`. Lines are never wrapped or joined (apart from brace
+placement in opinionated mode), and every edit is minimal: only the changed
+characters are replaced, so cursors and undo behave. Formatting never changes
+the code's tokens; a result that would is discarded.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `glslLsp.format.mode` | `conservative` | `conservative`, `opinionated` or `off` (see above). |
+| `glslLsp.format.maxBlankLines` | `1` | Longest run of blank lines kept. |
+| `glslLsp.format.braceStyle` | `preserve` | Opinionated mode only: `preserve`, `sameLine` (`void f() {`, `} else {`) or `nextLine` (`{` on its own line, `else` below `}`). Initializer lists and one-line blocks never move, and a brace never moves across a comment, a preprocessor line or a blank line. |
+| `glslLsp.format.indentPreprocessor` | `false` | Indent preprocessor lines to the brace depth of the surrounding code. |
+
+Example (opinionated):
+
+```glsl
+// before
+float f(float x){
+return x*x+-1.0*sin (x) ;
+}
+// after
+float f(float x) {
+    return x * x + -1.0 * sin(x);
+}
+```
+
 ## Settings
 
 | Setting | Default | Description |
@@ -246,6 +331,10 @@ says so; open the **GLSL** view to see it.
 | `glslLsp.values.throttleMs` | `33` | Minimum milliseconds between document edits while dragging a Values widget (33 ms is about 30 per second). Raise it if the live preview stutters. |
 | `glslLsp.values.maxDecimals` | `4` | Maximum decimals written by the Values panel. Trailing zeros are trimmed. A literal that already has more decimals keeps its precision, and a value too small for the limit is written with an exponent (`1e-5`) rather than rounded to `0.0`. |
 | `glslLsp.values.followCursor` | `true` | Update the Values panel's cursor row as the cursor moves. When off, it updates when you switch editors or run **GLSL: Focus Values Panel**. |
+| `glslLsp.format.mode` | `conservative` | `conservative`, `opinionated` or `off`. See [Formatting](#formatting). |
+| `glslLsp.format.maxBlankLines` | `1` | Longest run of blank lines the formatter keeps. |
+| `glslLsp.format.braceStyle` | `preserve` | Opinionated mode: `preserve`, `sameLine` or `nextLine`. |
+| `glslLsp.format.indentPreprocessor` | `false` | Indent preprocessor lines to the brace depth. |
 | `glslLsp.trace.server` | `off` | Trace LSP traffic in the output channel. |
 
 Commands: **GLSL: Restart Language Server**, **GLSL: Show Language Server

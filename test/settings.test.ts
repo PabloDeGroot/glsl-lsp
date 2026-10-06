@@ -53,6 +53,15 @@ describe('settings', () => {
     expect(store.get().shadertoy.enable).toBe('auto');
   });
 
+  it('normalizes the format settings', () => {
+    const store = new SettingsStore();
+    expect(store.get().format).toEqual({ mode: 'conservative', maxBlankLines: 1, braceStyle: 'preserve', indentPreprocessor: false });
+    store.update({ format: { mode: 'opinionated', braceStyle: 'nextLine', maxBlankLines: 2.7, indentPreprocessor: true } });
+    expect(store.get().format).toEqual({ mode: 'opinionated', maxBlankLines: 2, braceStyle: 'nextLine', indentPreprocessor: true });
+    store.update({ format: { mode: 'pretty', braceStyle: 'k&r', maxBlankLines: -1 } });
+    expect(store.get().format).toEqual({ mode: 'conservative', maxBlankLines: 1, braceStyle: 'preserve', indentPreprocessor: false });
+  });
+
   it('keeps environment uniforms and defines, dropping malformed entries', () => {
     const store = new SettingsStore();
     store.update({

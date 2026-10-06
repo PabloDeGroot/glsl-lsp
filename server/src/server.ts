@@ -22,6 +22,7 @@ import * as colors from './features/colors';
 import * as completion from './features/completion';
 import * as diagnostics from './features/diagnostics';
 import * as folding from './features/folding';
+import * as format from './features/format';
 import * as hover from './features/hover';
 import * as inlayHints from './features/inlayHints';
 import * as navigation from './features/navigation';
@@ -43,6 +44,7 @@ const FEATURES: { name: string; register(ctx: ServerContext): void }[] = [
   { name: 'folding', ...folding },
   { name: 'colors', ...colors },
   { name: 'values', ...values },
+  { name: 'format', ...format },
 ];
 
 /** `.` members, `#` directives, `"` `<` `/` include paths. */
@@ -197,9 +199,12 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
       foldingRangeProvider: true,
       selectionRangeProvider: true,
       colorProvider: true,
+      documentFormattingProvider: true,
+      documentRangeFormattingProvider: true,
+      documentOnTypeFormattingProvider: { firstTriggerCharacter: format.ON_TYPE_FIRST_TRIGGER, moreTriggerCharacter: format.ON_TYPE_MORE_TRIGGERS },
       workspace: hasWorkspaceFolderCapability ? { workspaceFolders: { supported: true, changeNotifications: true } } : undefined,
     },
-    serverInfo: { name: 'glsl-lsp', version: '0.3.0' },
+    serverInfo: { name: 'glsl-lsp', version: '0.4.0' },
   };
 });
 

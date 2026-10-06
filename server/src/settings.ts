@@ -3,6 +3,7 @@
 // two in sync when adding a setting (test/settings.test.ts checks it).
 
 import { sanitizeEnvironment, type EnvironmentUniform } from './builtins';
+import type { FormatSettings } from './features/format/options';
 
 export interface Settings {
   includePaths: string[];
@@ -25,6 +26,8 @@ export interface Settings {
   index: { exclude: string[]; maxFiles: number };
   /** Values panel. Read by the extension client only; mirrored here so package.json and the defaults stay in sync. */
   values: { throttleMs: number; maxDecimals: number; followCursor: boolean };
+  /** Formatter (document, range and on-type formatting). */
+  format: FormatSettings;
   trace: { server: 'off' | 'messages' | 'verbose' };
 }
 
@@ -43,6 +46,7 @@ export const defaultSettings: Settings = {
   environment: { uniforms: [], defines: {} },
   index: { exclude: ['node_modules', '.git', 'out', 'dist', '.vscode-test'], maxFiles: 10000 },
   values: { throttleMs: 33, maxDecimals: 4, followCursor: true },
+  format: { mode: 'conservative', maxBlankLines: 1, braceStyle: 'preserve', indentPreprocessor: false },
   trace: { server: 'off' },
 };
 
@@ -79,6 +83,15 @@ function normalize(raw: unknown): unknown {
     const v = raw.shadertoy.enable;
     const mode = v === true ? 'on' : v === false ? 'off' : v;
     out.shadertoy = { ...raw.shadertoy, enable: ['auto', 'on', 'off'].includes(mode as string) ? mode : undefined };
+  }
+  if (isObject(raw.format)) {
+    const f = raw.format;
+    out.format = {
+      ...f,
+      mode: ['conservative', 'opinionated', 'off'].includes(f.mode as string) ? f.mode : undefined,
+      braceStyle: ['preserve', 'sameLine', 'nextLine'].includes(f.braceStyle as string) ? f.braceStyle : undefined,
+      maxBlankLines: typeof f.maxBlankLines === 'number' && Number.isFinite(f.maxBlankLines) && f.maxBlankLines >= 0 ? Math.floor(f.maxBlankLines) : undefined,
+    };
   }
   return out;
 }

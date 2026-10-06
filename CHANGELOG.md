@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.4.0
+
+- **Formatting**: `textDocument/formatting`, `rangeFormatting` and
+  `onTypeFormatting` (after `}`, `;` and Enter: re-indents the current line).
+  - `glslLsp.format.mode`: `conservative` (default) changes only
+    indentation (brace and parenthesis depth; continuation lines get at least
+    one extra level and keep deeper hand alignment), trailing whitespace, runs
+    of blank lines (`glslLsp.format.maxBlankLines`, default 1), the final
+    newline, and adds a missing space after `,` / `;` and around assignments.
+    Hand-aligned columns, `float a    = 1.0;` padding and aligned trailing
+    comments are never changed. `opinionated` also normalizes operator,
+    keyword, parenthesis and brace spacing and places braces per
+    `glslLsp.format.braceStyle` (`preserve` | `sameLine` | `nextLine`).
+    `off` disables it.
+  - Preprocessor lines, `\`-continued macros, shader-toy directives, comment
+    text and `// glsl-format off` ... `// glsl-format on` regions are left
+    alone; `glslLsp.format.indentPreprocessor` (default off) indents
+    directives to the brace depth.
+  - `#if`/`#else` branches that each open a brace (LYGIA style) keep the
+    depth right; a lone branch that changes the depth is undone at `#endif`;
+    `#if 0` / `#if false` branches are left alone and ignored for the depth;
+    unbalanced files keep their indentation.
+  - Aligned trailing comments keep their column when their line is
+    re-indented. Lines continued with `\` (code, or a `//` comment ending in
+    `\`) are left alone as a group.
+  - Opinionated mode also indents un-braced `if`/`else`/`for`/`while`/`do`
+    bodies one level, pads one-line blocks (`{ x(); }`) and spaces operators
+    after postfix `++`/`--` (`a++ + b`).
+  - Respects the editor's tab size, spaces/tabs and the
+    `trimTrailingWhitespace` / `insertFinalNewline` / `trimFinalNewlines`
+    options; CRLF files stay CRLF. Edits are minimal (only changed
+    characters), range formatting uses the depth from the whole document,
+    and a result that would change the code's tokens is discarded.
+  - Tests check token preservation and idempotence in every mode over every
+    `.glsl` file of a real workspace (LYGIA included) when one is available.
+
 ## 0.3.0
 
 glsl-lsp is now a standalone, generic GLSL extension: Shadertoy support is
