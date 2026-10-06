@@ -1,0 +1,2 @@
+# glsl-lsp: folders containing this file are not indexed (test fixtures with
+# duplicate symbols would otherwise show up in completion and auto-include).

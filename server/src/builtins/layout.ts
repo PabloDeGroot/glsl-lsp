@@ -1,0 +1,65 @@
+// Identifiers valid inside `layout( ... )`. Kept apart from the keywords so
+// they are only offered in layout position, never as general identifiers.
+
+import type { BuiltinKeyword } from './types';
+
+const l = (name: string, doc: string, snippet?: string): BuiltinKeyword => ({ kind: 'keyword', name, category: 'qualifier', doc, ...(snippet ? { snippet } : {}) });
+
+export const layoutQualifiers: BuiltinKeyword[] = [
+  l('location', 'Attribute, varying or output slot: `layout(location = 0) out vec4 color;`.', 'location = ${1:0}'),
+  l('component', 'Component within a location (0 to 3), allowing several variables to share one location.', 'component = ${1:0}'),
+  l('index', 'Fragment output index for dual-source blending (0 or 1).', 'index = ${1:0}'),
+  l('binding', 'Binding point of a uniform/buffer block, sampler, image or atomic counter.', 'binding = ${1:0}'),
+  l('offset', 'Byte offset of an atomic counter within its buffer, or of a block member.', 'offset = ${1:0}'),
+  l('set', 'Vulkan GLSL descriptor set number.', 'set = ${1:0}'),
+  l('push_constant', 'Vulkan GLSL: the block is stored in push constants.'),
+  l('constant_id', 'Vulkan GLSL: specialization constant id.', 'constant_id = ${1:0}'),
+  l('std140', 'Standard layout for uniform blocks with explicit padding rules (vec3 aligned as vec4).'),
+  l('std430', 'Tighter standard layout for shader storage blocks (arrays and structs are not padded to vec4).'),
+  l('shared', 'Implementation-defined but shared layout (the default for uniform blocks in desktop GLSL).'),
+  l('packed', 'Implementation-defined packed layout; offsets must be queried.'),
+  l('row_major', 'Matrices in the block are stored row by row.'),
+  l('column_major', 'Matrices in the block are stored column by column (the default).'),
+  l('align', 'Minimum byte alignment of a block member.', 'align = ${1:16}'),
+  l('xfb_buffer', 'Transform feedback buffer number.'),
+  l('xfb_stride', 'Transform feedback stride in bytes.'),
+  l('xfb_offset', 'Transform feedback byte offset.'),
+  l('stream', 'Geometry shader output vertex stream.', 'stream = ${1:0}'),
+  l('origin_upper_left', 'Fragment coordinates have their origin in the upper left (applies to `gl_FragCoord`).'),
+  l('pixel_center_integer', 'Pixel centres of `gl_FragCoord` lie on integer coordinates instead of half-integers.'),
+  l('early_fragment_tests', 'Run depth and stencil tests before the fragment shader.'),
+  l('depth_any', 'Fragment depth layout: `gl_FragDepth` may be written with any value.'),
+  l('depth_greater', 'Fragment depth layout: `gl_FragDepth` is only ever greater than `gl_FragCoord.z`.'),
+  l('depth_less', 'Fragment depth layout: `gl_FragDepth` is only ever less than `gl_FragCoord.z`.'),
+  l('depth_unchanged', 'Fragment depth layout: `gl_FragDepth` is never modified.'),
+  l('local_size_x', 'Compute shader work group size in x.', 'local_size_x = ${1:8}'),
+  l('local_size_y', 'Compute shader work group size in y.', 'local_size_y = ${1:8}'),
+  l('local_size_z', 'Compute shader work group size in z.', 'local_size_z = ${1:1}'),
+  l('points', 'Geometry shader input/output primitive: points.'),
+  l('lines', 'Geometry shader input primitive: lines.'),
+  l('lines_adjacency', 'Geometry shader input primitive: lines with adjacency.'),
+  l('triangles', 'Geometry or tessellation primitive: triangles.'),
+  l('triangles_adjacency', 'Geometry shader input primitive: triangles with adjacency.'),
+  l('line_strip', 'Geometry shader output primitive: line strip.'),
+  l('triangle_strip', 'Geometry shader output primitive: triangle strip.'),
+  l('max_vertices', 'Maximum number of vertices a geometry shader emits.', 'max_vertices = ${1:3}'),
+  l('invocations', 'Number of geometry shader invocations per input primitive.', 'invocations = ${1:1}'),
+  l('vertices', 'Number of vertices in the output patch of a tessellation control shader.', 'vertices = ${1:3}'),
+  l('quads', 'Tessellation domain: quads.'),
+  l('isolines', 'Tessellation domain: isolines.'),
+  l('equal_spacing', 'Tessellation spacing: equal.'),
+  l('fractional_even_spacing', 'Tessellation spacing: fractional even.'),
+  l('fractional_odd_spacing', 'Tessellation spacing: fractional odd.'),
+  l('cw', 'Tessellation winding order: clockwise.'),
+  l('ccw', 'Tessellation winding order: counter-clockwise.'),
+  l('point_mode', 'Tessellation emits points.'),
+  ...(
+    [
+      ['rgba32f', 'Four 32-bit floats per texel.'], ['rgba16f', 'Four 16-bit floats per texel.'], ['rg32f', 'Two 32-bit floats per texel.'],
+      ['rg16f', 'Two 16-bit floats per texel.'], ['r32f', 'One 32-bit float per texel.'], ['r16f', 'One 16-bit float per texel.'],
+      ['rgba8', 'Four 8-bit unsigned normalized values per texel.'], ['rgba8_snorm', 'Four 8-bit signed normalized values per texel.'],
+      ['rgba32i', 'Four 32-bit signed integers per texel.'], ['rgba32ui', 'Four 32-bit unsigned integers per texel.'],
+      ['r32i', 'One 32-bit signed integer per texel.'], ['r32ui', 'One 32-bit unsigned integer per texel.'],
+    ] as const
+  ).map(([n, d]) => l(n, `Image format: ${d}`)),
+];

@@ -1,0 +1,315 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GLSL",
+  "scopeName": "source.glsl",
+  "fileTypes": ["glsl", "frag", "vert", "comp", "geom", "tesc", "tese", "fs", "vs"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#preprocessor" },
+    { "include": "#code" }
+  ],
+  "repository": {
+    "code": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#struct" },
+        { "include": "#function-definition" },
+        { "include": "#keywords" },
+        { "include": "#types" },
+        { "include": "#qualifiers" },
+        { "include": "#constants" },
+        { "include": "#numbers" },
+        { "include": "#builtin-variables" },
+        { "include": "#function-call" },
+        { "include": "#member" },
+        { "include": "#macro-constant" },
+        { "include": "#operators" },
+        { "include": "#punctuation" }
+      ]
+    },
+
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.glsl",
+          "begin": "/\\*\\*(?!/)",
+          "end": "\\*/",
+          "captures": { "0": { "name": "punctuation.definition.comment.glsl" } },
+          "patterns": [{ "include": "#doc-tags" }]
+        },
+        {
+          "name": "comment.block.glsl",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "captures": { "0": { "name": "punctuation.definition.comment.glsl" } },
+          "patterns": [{ "include": "#lygia-doc-keys" }, { "include": "#doc-tags" }]
+        },
+        {
+          "name": "comment.line.double-slash.glsl",
+          "begin": "//",
+          "end": "$",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.glsl" } },
+          "patterns": [
+            { "name": "keyword.other.region.glsl", "match": "(?<=//)\\s*#?(end)?region\\b" },
+            { "name": "keyword.other.directive.channels.glsl", "match": "(?<=//)\\s*@channels?\\b" },
+            { "include": "#doc-tags" }
+          ]
+        }
+      ]
+    },
+    "doc-tags": {
+      "patterns": [
+        {
+          "match": "[@\\\\](param)\\s+(\\w+)",
+          "captures": { "1": { "name": "storage.type.class.doc.glsl" }, "2": { "name": "variable.parameter.doc.glsl" } }
+        },
+        { "name": "storage.type.class.doc.glsl", "match": "[@\\\\](return|returns|brief|note|see|deprecated|example)\\b" }
+      ]
+    },
+    "lygia-doc-keys": {
+      "patterns": [
+        {
+          "match": "^\\s*(contributors|description|use|options|examples|license|author|type|params)\\s*(:)",
+          "captures": { "1": { "name": "storage.type.class.doc.lygia.glsl" }, "2": { "name": "punctuation.separator.key-value.glsl" } }
+        },
+        {
+          "match": "^\\s*(-)\\s+([A-Z_][A-Z0-9_]+)(?=\\s*:|\\s*$)",
+          "captures": { "1": { "name": "punctuation.definition.list.glsl" }, "2": { "name": "constant.other.option.glsl" } }
+        }
+      ]
+    },
+
+    "preprocessor": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.include.glsl",
+          "match": "^\\s*(#)\\s*(include)\\b\\s*((\")[^\"]*(\")|(<)[^>]*(>))?",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.include.glsl" },
+            "3": { "name": "string.quoted.other.include.glsl" },
+            "4": { "name": "punctuation.definition.string.begin.glsl" },
+            "5": { "name": "punctuation.definition.string.end.glsl" },
+            "6": { "name": "punctuation.definition.string.begin.glsl" },
+            "7": { "name": "punctuation.definition.string.end.glsl" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.macro.glsl",
+          "begin": "^\\s*(#)\\s*(define)\\s+([A-Za-z_]\\w*)(?:(\\()([^)]*)(\\)))?",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.define.glsl" },
+            "3": { "name": "entity.name.function.preprocessor.glsl" },
+            "4": { "name": "punctuation.definition.parameters.begin.glsl" },
+            "5": { "name": "variable.parameter.preprocessor.glsl" },
+            "6": { "name": "punctuation.definition.parameters.end.glsl" }
+          },
+          "end": "(?<!\\\\)$|(?=//)",
+          "patterns": [{ "include": "#line-continuation" }, { "include": "#comments" }, { "include": "#code" }]
+        },
+        {
+          "name": "meta.preprocessor.conditional.glsl",
+          "begin": "^\\s*(#)\\s*(if|ifdef|ifndef|elif|undef)\\b",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.conditional.glsl" }
+          },
+          "end": "(?<!\\\\)$|(?=//)",
+          "patterns": [
+            { "include": "#line-continuation" },
+            { "include": "#comments" },
+            { "name": "keyword.control.directive.defined.glsl", "match": "\\bdefined\\b" },
+            { "name": "entity.name.function.preprocessor.glsl", "match": "\\b[A-Za-z_]\\w*\\b" },
+            { "include": "#numbers" },
+            { "include": "#operators" }
+          ]
+        },
+        {
+          "match": "^\\s*(#)\\s*(else|endif)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.conditional.glsl" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.version.glsl",
+          "match": "^\\s*(#)\\s*(version)\\s+(\\d+)(?:\\s+(core|compatibility|es))?",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.version.glsl" },
+            "3": { "name": "constant.numeric.version.glsl" },
+            "4": { "name": "storage.modifier.profile.glsl" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.extension.glsl",
+          "match": "^\\s*(#)\\s*(extension)\\s+(\\w+)\\s*(:)\\s*(require|enable|warn|disable)?",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.extension.glsl" },
+            "3": { "name": "entity.name.type.extension.glsl" },
+            "4": { "name": "punctuation.separator.glsl" },
+            "5": { "name": "constant.language.extension-behavior.glsl" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.shadertoy.channel.glsl",
+          "match": "^\\s*(#)\\s*(iChannel\\d)(?:(::)(\\w+))?\\s*(\"[^\"]*\")?",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.shadertoy.glsl" },
+            "3": { "name": "punctuation.separator.glsl" },
+            "4": { "name": "support.type.property-name.shadertoy.glsl" },
+            "5": { "name": "string.quoted.double.glsl" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.shadertoy.uniform.glsl",
+          "begin": "^\\s*(#)\\s*(iUniform)\\s+(\\w+)\\s+([A-Za-z_]\\w*)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.shadertoy.glsl" },
+            "3": { "name": "storage.type.glsl" },
+            "4": { "name": "variable.other.uniform.glsl" }
+          },
+          "end": "$|(?=//)",
+          "patterns": [
+            { "name": "keyword.operator.word.glsl", "match": "\\b(in|step)\\b" },
+            { "name": "support.function.constructor.glsl", "match": "\\b(color[34]|[biu]?vec[234])\\b" },
+            { "include": "#numbers" },
+            { "include": "#operators" },
+            { "include": "#punctuation" }
+          ]
+        },
+        {
+          "match": "^\\s*(#)\\s*(iKeyboard|iMouse|iChannel\\w*)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.shadertoy.glsl" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.glsl",
+          "begin": "^\\s*(#)\\s*(pragma|line|error|warning|\\w+)?",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.directive.glsl" },
+            "2": { "name": "keyword.control.directive.glsl" }
+          },
+          "end": "(?<!\\\\)$|(?=//)",
+          "patterns": [{ "include": "#line-continuation" }, { "include": "#comments" }]
+        }
+      ]
+    },
+    "line-continuation": {
+      "name": "constant.character.escape.line-continuation.glsl",
+      "match": "\\\\$"
+    },
+
+    "struct": {
+      "match": "\\b(struct)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": { "name": "storage.type.struct.glsl" },
+        "2": { "name": "entity.name.type.struct.glsl" }
+      }
+    },
+    "function-definition": {
+      "comment": "type name( at the start of a declaration; keywords are excluded by the lookahead.",
+      "match": "(?<![\\w.])(?!(?:return|else|if|while|for|switch|case|new)\\b)([A-Za-z_]\\w*)(\\s*\\[[^\\]]*\\])?\\s+(?!(?:return|else|if|while|for|switch|case|in|out|inout)\\b)([A-Za-z_]\\w*)\\s*(?=\\()",
+      "captures": {
+        "1": { "patterns": [{ "include": "#types" }, { "name": "entity.name.type.glsl", "match": ".+" }] },
+        "3": { "name": "entity.name.function.definition.glsl" }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.glsl", "match": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|discard)\\b" },
+        { "name": "storage.modifier.layout.glsl", "match": "\\b(layout|precision)\\b" },
+        { "name": "storage.type.struct.glsl", "match": "\\bstruct\\b" }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.glsl",
+          "match": "\\b(void|bool|int|uint|float|double|atomic_uint|[biud]?vec[234]|d?mat[234](x[234])?)\\b"
+        },
+        {
+          "name": "storage.type.sampler.glsl",
+          "match": "\\b([iu]?(sampler|image|texture)(1D|2D|3D|Cube|2DRect|Buffer|1DArray|2DArray|CubeArray|2DMS|2DMSArray)(Shadow)?|sampler(1D|2D|2DRect|Cube|1DArray|2DArray|CubeArray)Shadow|samplerExternalOES|sampler)\\b"
+        }
+      ]
+    },
+    "qualifiers": {
+      "name": "storage.modifier.glsl",
+      "match": "\\b(const|in|out|inout|uniform|buffer|shared|attribute|varying|centroid|flat|smooth|noperspective|patch|sample|highp|mediump|lowp|invariant|precise|coherent|volatile|restrict|readonly|writeonly|subroutine)\\b"
+    },
+    "constants": {
+      "name": "constant.language.boolean.glsl",
+      "match": "\\b(true|false)\\b"
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.glsl", "match": "\\b0[xX][0-9a-fA-F]+[uU]?\\b" },
+        {
+          "name": "constant.numeric.float.glsl",
+          "match": "(?<![\\w.])((\\d+\\.\\d*|\\.\\d+)([eE][+-]?\\d+)?|\\d+[eE][+-]?\\d+)([fF]|lf|LF)?(?!\\w)"
+        },
+        { "name": "constant.numeric.integer.glsl", "match": "\\b\\d+([uU]|[fF]|lf|LF)?\\b" }
+      ]
+    },
+    "builtin-variables": {
+      "patterns": [
+        { "name": "variable.language.glsl", "match": "\\bgl_\\w+\\b" },
+        {
+          "name": "support.variable.shadertoy.glsl",
+          "match": "\\bi(Resolution|Time|TimeDelta|FrameRate|Frame|Mouse|Date|SampleRate|ChannelResolution|ChannelTime|Channel[0-3])\\b"
+        },
+        { "name": "support.constant.keyboard.glsl", "match": "\\bKey_\\w+\\b" }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "name": "support.function.constructor.glsl",
+          "match": "\\b([biud]?vec[234]|d?mat[234](x[234])?|float|int|uint|bool|double)\\s*(?=\\()"
+        },
+        {
+          "name": "support.function.builtin.glsl",
+          "match": "\\b(radians|degrees|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|asinh|acosh|atanh|pow|exp|log|exp2|log2|sqrt|inversesqrt|abs|sign|floor|trunc|round|roundEven|ceil|fract|mod|modf|min|max|clamp|mix|step|smoothstep|isnan|isinf|floatBitsToInt|floatBitsToUint|intBitsToFloat|uintBitsToFloat|fma|frexp|ldexp|packUnorm2x16|packSnorm2x16|packUnorm4x8|packSnorm4x8|unpackUnorm2x16|unpackSnorm2x16|unpackUnorm4x8|unpackSnorm4x8|packHalf2x16|unpackHalf2x16|length|distance|dot|cross|normalize|faceforward|reflect|refract|matrixCompMult|outerProduct|transpose|determinant|inverse|lessThan|lessThanEqual|greaterThan|greaterThanEqual|equal|notEqual|any|all|not|uaddCarry|usubBorrow|umulExtended|imulExtended|bitfieldExtract|bitfieldInsert|bitfieldReverse|bitCount|findLSB|findMSB|textureSize|textureQueryLod|textureQueryLevels|texture|textureProj|textureLod|textureOffset|texelFetch|texelFetchOffset|textureProjOffset|textureLodOffset|textureProjLod|textureProjLodOffset|textureGrad|textureGradOffset|textureProjGrad|textureProjGradOffset|textureGather|textureGatherOffset|textureGatherOffsets|texture2D|texture2DLod|texture2DProj|textureCube|textureCubeLod|texture3D|dFdx|dFdy|dFdxFine|dFdyFine|dFdxCoarse|dFdyCoarse|fwidth|fwidthFine|fwidthCoarse|interpolateAtCentroid|interpolateAtSample|interpolateAtOffset|imageLoad|imageStore|imageSize|imageAtomicAdd|atomicAdd|atomicMin|atomicMax|atomicAnd|atomicOr|atomicXor|atomicExchange|atomicCompSwap|barrier|memoryBarrier|groupMemoryBarrier|EmitVertex|EndPrimitive|isKeyDown|isKeyPressed|isKeyReleased|isKeyToggled)\\s*(?=\\()"
+        },
+        { "name": "entity.name.function.preprocessor.glsl", "match": "\\b[A-Z][A-Z0-9_]*(?=\\s*\\()" },
+        { "name": "entity.name.function.call.glsl", "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()" }
+      ]
+    },
+    "member": {
+      "match": "(\\.)\\s*([A-Za-z_]\\w*)",
+      "captures": {
+        "1": { "name": "punctuation.accessor.glsl" },
+        "2": { "name": "variable.other.member.glsl" }
+      }
+    },
+    "macro-constant": {
+      "name": "constant.other.macro.glsl",
+      "match": "\\b[A-Z][A-Z0-9_]+\\b"
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.assignment.compound.glsl", "match": "(\\+|-|\\*|/|%|<<|>>|&|\\^|\\|)=" },
+        { "name": "keyword.operator.comparison.glsl", "match": "==|!=|<=|>=|<|>" },
+        { "name": "keyword.operator.logical.glsl", "match": "&&|\\|\\||\\^\\^|!" },
+        { "name": "keyword.operator.increment.glsl", "match": "\\+\\+|--" },
+        { "name": "keyword.operator.bitwise.glsl", "match": "<<|>>|&|\\||\\^|~" },
+        { "name": "keyword.operator.assignment.glsl", "match": "=" },
+        { "name": "keyword.operator.arithmetic.glsl", "match": "\\+|-|\\*|/|%" },
+        { "name": "keyword.operator.ternary.glsl", "match": "\\?|:" }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.terminator.statement.glsl", "match": ";" },
+        { "name": "punctuation.separator.delimiter.glsl", "match": "," }
+      ]
+    }
+  }
+}

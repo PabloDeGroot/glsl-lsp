@@ -1,0 +1,219 @@
+{
+  "name": "glsl-lsp",
+  "displayName": "GLSL Language Server",
+  "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting and more. Shadertoy and LYGIA aware.",
+  "version": "0.1.0",
+  "publisher": "pablodegroot",
+  "license": "MIT",
+  "author": "Pablo de Groot",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PabloDeGroot/glsl-lsp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PabloDeGroot/glsl-lsp/issues"
+  },
+  "homepage": "https://github.com/PabloDeGroot/glsl-lsp#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "glsl",
+    "shader",
+    "shadertoy",
+    "lygia",
+    "language server"
+  ],
+  "main": "./dist/client.js",
+  "activationEvents": [
+    "onLanguage:glsl"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "glsl",
+        "aliases": [
+          "GLSL",
+          "glsl"
+        ],
+        "extensions": [
+          ".glsl",
+          ".frag",
+          ".vert",
+          ".comp",
+          ".geom",
+          ".tesc",
+          ".tese"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "glsl",
+        "scopeName": "source.glsl",
+        "path": "./syntaxes/glsl.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "glslLsp.restartServer",
+        "title": "Restart Language Server",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.showOutput",
+        "title": "Show Language Server Output",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.reindex",
+        "title": "Re-index Workspace",
+        "category": "GLSL"
+      }
+    ],
+    "configuration": {
+      "title": "GLSL Language Server",
+      "properties": {
+        "glslLsp.includePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra directories searched by `#include` after the including file's folder. Relative entries are resolved against each workspace folder."
+        },
+        "glslLsp.diagnostics.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report problems (syntax, unresolved includes, undeclared identifiers, glslangValidator errors)."
+        },
+        "glslLsp.diagnostics.undeclared": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Report identifiers that resolve to nothing. Names declared in a not-yet-included workspace file are errors with an \"Add #include\" quick fix."
+        },
+        "glslLsp.diagnostics.glslang.enable": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Validate shaders with `glslangValidator` and report its errors."
+        },
+        "glslLsp.diagnostics.glslang.path": {
+          "type": "string",
+          "default": "glslangValidator",
+          "markdownDescription": "Path to the `glslangValidator` executable (a `.cmd`/`.bat` wrapper works on Windows). The default looks it up on `PATH`."
+        },
+        "glslLsp.diagnostics.onType": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-validate while typing (debounced) instead of only on save."
+        },
+        "glslLsp.completion.autoInclude": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When completing a function, struct or macro from a file that is not yet included, insert the matching `#include \"...\"` line automatically."
+        },
+        "glslLsp.rename.readOnlyPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lygia"
+          ],
+          "markdownDescription": "Folders whose files a rename never edits (third-party libraries such as LYGIA). Renaming a symbol declared there is refused. A bare name matches that folder anywhere; an entry containing `/` matches a path relative to the workspace folder. Files outside the workspace folders are always read-only."
+        },
+        "glslLsp.inlayHints.parameterNames": {
+          "type": "string",
+          "enum": [
+            "none",
+            "literals",
+            "all"
+          ],
+          "enumDescriptions": [
+            "No parameter name hints.",
+            "Hints only for literal arguments (numbers, booleans, constructors).",
+            "Hints for every argument whose text does not already say the parameter name."
+          ],
+          "default": "literals",
+          "markdownDescription": "Parameter name inlay hints on call arguments, e.g. `smoothstep(edge0: 0.2, edge1: 0.8, x)`."
+        },
+        "glslLsp.colors.mode": {
+          "type": "string",
+          "enum": [
+            "heuristic",
+            "all",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Only vec3/vec4 literals that look like colors (assigned to col, color, tint, ... or passed to such a parameter).",
+            "Every vec3/vec4 literal with components in [0, 1].",
+            "No color decorators."
+          ],
+          "default": "heuristic",
+          "markdownDescription": "Which `vec3(...)` / `vec4(...)` literals get a color swatch and picker."
+        },
+        "glslLsp.shadertoy.enable": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Understand Shadertoy uniforms (`iTime`, `iResolution`, ...) and the shader-toy extension directives (`#iChannel`, `#iUniform`, `#iKeyboard`)."
+        },
+        "glslLsp.index.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "node_modules",
+            ".git",
+            "out",
+            "dist",
+            ".vscode-test"
+          ],
+          "markdownDescription": "Folders skipped when indexing. A bare name (`node_modules`) matches that folder anywhere; an entry containing `/` (`glsl-lsp/test/fixtures`) matches a path relative to the workspace folder, or the end of one. A folder containing a `.glsl-lsp-ignore` file is always skipped. Files in skipped folders are still loaded when something includes them."
+        },
+        "glslLsp.index.maxFiles": {
+          "type": "number",
+          "default": 10000,
+          "description": "Maximum number of GLSL files indexed per workspace."
+        },
+        "glslLsp.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace the communication between VS Code and the GLSL language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "node scripts/build.mjs --production",
+    "test:e2e": "vitest run test/e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "vscode-uri": "^3.0.8"
+  }
+}
