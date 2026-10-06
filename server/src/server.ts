@@ -27,6 +27,7 @@ import * as inlayHints from './features/inlayHints';
 import * as navigation from './features/navigation';
 import * as semanticTokens from './features/semanticTokens';
 import * as signatureHelp from './features/signatureHelp';
+import * as values from './features/values';
 import { SettingsStore, type Settings } from './settings';
 
 /** Every feature module. Each exports `register(ctx)`. */
@@ -41,6 +42,7 @@ const FEATURES: { name: string; register(ctx: ServerContext): void }[] = [
   { name: 'semanticTokens', ...semanticTokens },
   { name: 'folding', ...folding },
   { name: 'colors', ...colors },
+  { name: 'values', ...values },
 ];
 
 /** `.` members, `#` directives, `"` `<` `/` include paths. */

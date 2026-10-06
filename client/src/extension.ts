@@ -1,9 +1,11 @@
 // VS Code extension entry point: starts the GLSL language server (dist/server.js)
-// over IPC and contributes the restart / output / re-index commands.
+// over IPC and contributes the restart / output / re-index commands, and the
+// Values side panel (./values).
 
 import * as path from 'node:path';
 import { commands, window, workspace, type ExtensionContext, type OutputChannel } from 'vscode';
 import { LanguageClient, TransportKind, type LanguageClientOptions, type ServerOptions } from 'vscode-languageclient/node';
+import { registerValues } from './values';
 
 const GLSL_GLOB = '**/*.{glsl,frag,vert,comp,geom,tesc,tese}';
 
@@ -54,6 +56,8 @@ export async function activate(context: ExtensionContext): Promise<void> {
       window.setStatusBarMessage(`GLSL: indexed ${res.files} files`, 3000);
     }),
   );
+
+  registerValues(context, () => client);
 
   await client.start();
 }

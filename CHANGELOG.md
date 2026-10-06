@@ -1,6 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+- **Values panel** (new Activity Bar view **GLSL › Values**): interactive
+  widgets for the numbers in a shader, inspired by glslEditor.
+  - A list with the value at the cursor always on top (with a pin button) and
+    your pinned values below it, each with a live preview (swatch, numbers,
+    arrow). Pins are stored per workspace, re-found by declaration name or line
+    shape after edits, keep working for other files, and show *not found* when
+    their value is deleted.
+  - A widget area for the selected row: slider for floats (`#iUniform` ranges
+    or an editable automatic range), 2D trackpad for `vec2`, color picker
+    (SV square, hue, alpha, hex/RGB, HDR intensity) or trackball direction
+    picker for `vec3`/`vec4` with a Color | Vector toggle, one slider per
+    number for lines with several literals, and a cosine palette editor with
+    gradient, curves and presets.
+  - Dragging rewrites the literal live (throttled, `glslLsp.values.throttleMs`),
+    one undo step per drag; typing in the same spot stops the drag instead of
+    fighting you. Numbers in the list can be scrubbed by dragging sideways.
+  - Commands **GLSL: Pin Value at Cursor** (also in the editor context menu),
+    **GLSL: Unpin All Values**, **GLSL: Focus Values Panel**.
+  - Native look from the VS Code theme (light, dark, high contrast), crisp
+    canvases, full keyboard support, strict content security policy.
+- **Nudge commands**: `Ctrl+Alt+Up/Down` (`Ctrl+Shift+Alt+Up/Down` for x10)
+  in GLSL editors increment/decrement the number under the cursor by its last
+  decimal place, with multiple cursors. When the cursor is not on a number
+  the keys do what they do by default on the platform (*Add Cursor
+  Above/Below* on Windows, column selection), so multi-cursor editing keeps
+  working in GLSL files; several cursors nudge only when all are on numbers.
+- New settings `glslLsp.values.throttleMs`, `glslLsp.values.maxDecimals`,
+  `glslLsp.values.followCursor`.
+- Server: custom request `glslLsp/valueTargets` (no capability needed; answers
+  `null` / `match: 'none'` for unknown documents instead of failing).
 
 - **Completion**
   - Ctrl+Space with an empty prefix now lists not-yet-included functions and

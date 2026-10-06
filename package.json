@@ -2,7 +2,7 @@
   "name": "glsl-lsp",
   "displayName": "GLSL Language Server",
   "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting and more. Shadertoy and LYGIA aware.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "pablodegroot",
   "license": "MIT",
   "author": "Pablo de Groot",
@@ -30,7 +30,8 @@
   ],
   "main": "./dist/client.js",
   "activationEvents": [
-    "onLanguage:glsl"
+    "onLanguage:glsl",
+    "onView:glslLsp.values"
   ],
   "contributes": {
     "languages": [
@@ -73,6 +74,43 @@
       {
         "command": "glslLsp.reindex",
         "title": "Re-index Workspace",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.pinValue",
+        "title": "Pin Value at Cursor",
+        "category": "GLSL",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "glslLsp.clearPins",
+        "title": "Unpin All Values",
+        "category": "GLSL",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "glslLsp.focusValues",
+        "title": "Focus Values Panel",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.nudgeUp",
+        "title": "Increment Number at Cursor",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.nudgeDown",
+        "title": "Decrement Number at Cursor",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.nudgeUpLarge",
+        "title": "Increment Number at Cursor (x10)",
+        "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.nudgeDownLarge",
+        "title": "Decrement Number at Cursor (x10)",
         "category": "GLSL"
       }
     ],
@@ -181,6 +219,25 @@
           "default": 10000,
           "description": "Maximum number of GLSL files indexed per workspace."
         },
+        "glslLsp.values.throttleMs": {
+          "type": "number",
+          "default": 33,
+          "minimum": 8,
+          "maximum": 500,
+          "markdownDescription": "Minimum time in milliseconds between document edits while dragging a widget in the **Values** panel (33 ms is about 30 updates per second). Raise it if the live preview stutters."
+        },
+        "glslLsp.values.maxDecimals": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 6,
+          "markdownDescription": "Maximum number of decimals the **Values** panel writes into a float literal. Trailing zeros are always trimmed (`0.5`, `2.0`). A literal that already has more decimals keeps its precision, and a value too small for the limit is written with an exponent (`1e-5`) instead of `0.0`."
+        },
+        "glslLsp.values.followCursor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Update the **Values** panel cursor row as the editor cursor moves. When off, it updates only on `GLSL: Focus Values Panel`."
+        },
         "glslLsp.trace.server": {
           "type": "string",
           "enum": [
@@ -192,12 +249,101 @@
           "description": "Trace the communication between VS Code and the GLSL language server."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "glslLsp",
+          "title": "GLSL",
+          "icon": "media/values.svg"
+        }
+      ]
+    },
+    "views": {
+      "glslLsp": [
+        {
+          "type": "webview",
+          "id": "glslLsp.values",
+          "name": "Values",
+          "icon": "media/values.svg",
+          "contextualTitle": "GLSL Values"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "glslLsp.nudgeUp",
+        "key": "ctrl+alt+up",
+        "mac": "ctrl+alt+up",
+        "when": "editorTextFocus && editorLangId == glsl"
+      },
+      {
+        "command": "glslLsp.nudgeDown",
+        "key": "ctrl+alt+down",
+        "mac": "ctrl+alt+down",
+        "when": "editorTextFocus && editorLangId == glsl"
+      },
+      {
+        "command": "glslLsp.nudgeUpLarge",
+        "key": "ctrl+shift+alt+up",
+        "mac": "ctrl+shift+alt+up",
+        "when": "editorTextFocus && editorLangId == glsl"
+      },
+      {
+        "command": "glslLsp.nudgeDownLarge",
+        "key": "ctrl+shift+alt+down",
+        "mac": "ctrl+shift+alt+down",
+        "when": "editorTextFocus && editorLangId == glsl"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "glslLsp.pinValue",
+          "when": "editorLangId == glsl",
+          "group": "1_glsl@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "glslLsp.pinValue",
+          "when": "view == glslLsp.values",
+          "group": "navigation@1"
+        },
+        {
+          "command": "glslLsp.clearPins",
+          "when": "view == glslLsp.values && glslLsp.values.hasPins",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "glslLsp.pinValue",
+          "when": "editorLangId == glsl"
+        },
+        {
+          "command": "glslLsp.nudgeUp",
+          "when": "editorLangId == glsl"
+        },
+        {
+          "command": "glslLsp.nudgeDown",
+          "when": "editorLangId == glsl"
+        },
+        {
+          "command": "glslLsp.nudgeUpLarge",
+          "when": "editorLangId == glsl"
+        },
+        {
+          "command": "glslLsp.nudgeDownLarge",
+          "when": "editorLangId == glsl"
+        }
+      ]
     }
   },
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
-    "typecheck": "tsc -p . --noEmit",
+    "typecheck": "tsc -p . --noEmit && tsc -p webview --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "vsce package --no-dependencies",

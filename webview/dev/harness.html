@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!-- Dev harness for the Values webview (not shipped). Build first (npm run build), then open:
+     file:///.../webview/dev/harness.html?theme=dark&scene=color
+     scenes: color float vec2 vector vec4 palette multi stale empty noEditor hdr locked childColor
+     themes: dark light hc -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GLSL Values harness</title>
+    <script src="harness.js"></script>
+    <link rel="stylesheet" href="../../dist/webview.css" />
+  </head>
+  <body>
+    <div id="app" class="app" role="application" aria-label="GLSL values"></div>
+    <script src="../../dist/webview.js"></script>
+  </body>
+</html>

@@ -1,0 +1,2123 @@
+/* Values panel styles. Design tokens from docs/VALUES.md "Visual design".
+   Only --vscode-* theme variables (through the --gv-* roles); hard-coded
+   colors only inside the color picker's own gradients/markers. */
+
+:root {
+  /* spacing (4px grid) */
+  --gv-space-1: 2px;
+  --gv-space-2: 4px;
+  --gv-space-3: 8px;
+  --gv-space-4: 12px;
+  --gv-space-5: 16px;
+  --gv-gutter: 12px; /* matches the sidebar tree indent */
+
+  /* sizes */
+  --gv-row-height: 22px; /* VS Code list row */
+  --gv-header-height: 22px; /* VS Code pane header */
+  --gv-input-height: 22px;
+  --gv-swatch: 12px;
+  --gv-widget-min-height: 236px; /* reserved so switching widgets never jumps */
+  /* canvases shrink in short views so list + widget fit without a page scroll */
+  --gv-canvas-max: clamp(160px, 42vh, 280px);
+
+  /* radii */
+  --gv-radius-sm: 2px; /* inputs, buttons (VS Code) */
+  --gv-radius: 4px; /* canvases, cards */
+  --gv-radius-round: 50%;
+
+  /* type */
+  --gv-font: var(--vscode-font-family);
+  --gv-font-size: var(--vscode-font-size, 13px);
+  --gv-font-size-small: 11px;
+  --gv-mono: var(--vscode-editor-font-family, monospace);
+  --gv-mono-size: 12px;
+
+  /* color roles (all theme driven) */
+  --gv-fg: var(--vscode-foreground);
+  --gv-fg-muted: var(--vscode-descriptionForeground);
+  --gv-bg: var(--vscode-sideBar-background);
+  --gv-hover: var(--vscode-list-hoverBackground);
+  --gv-selected-bg: var(--vscode-list-inactiveSelectionBackground);
+  --gv-selected-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-foreground));
+  --gv-selected-focus-bg: var(--vscode-list-activeSelectionBackground);
+  --gv-selected-focus-fg: var(--vscode-list-activeSelectionForeground);
+  --gv-focus: var(--vscode-focusBorder);
+  --gv-accent: var(--vscode-textLink-foreground);
+  --gv-border: var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
+  --gv-contrast: var(--vscode-contrastBorder, transparent);
+  --gv-contrast-active: var(--vscode-contrastActiveBorder, transparent);
+  --gv-warn: var(--vscode-editorWarning-foreground); /* icons, markers */
+  /* Warning TEXT: editorWarning is an icon color (2.9:1 on Light Modern's sidebar); lists use list.warningForeground. */
+  --gv-warn-text: var(--vscode-list-warningForeground, var(--vscode-foreground));
+  --gv-error: var(--vscode-errorForeground);
+  --gv-icon: var(--vscode-icon-foreground);
+  --gv-toolbar-hover: var(--vscode-toolbar-hoverBackground);
+  --gv-input-bg: var(--vscode-input-background);
+  --gv-input-fg: var(--vscode-input-foreground);
+  --gv-input-border: var(--vscode-input-border, transparent);
+  --gv-section-bg: var(--vscode-sideBarSectionHeader-background, transparent);
+  --gv-section-fg: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-sideBarTitle-foreground));
+  --gv-section-border: var(--vscode-sideBarSectionHeader-border, transparent);
+  --gv-canvas-bg: var(--vscode-editor-background);
+  --gv-grid: var(--vscode-editorIndentGuide-background1, var(--vscode-editorIndentGuide-background));
+  --gv-axis-x: var(--vscode-charts-red);
+  --gv-axis-y: var(--vscode-charts-green);
+  --gv-axis-z: var(--vscode-charts-blue);
+  --gv-axis-w: var(--vscode-charts-yellow);
+  --gv-shadow: var(--vscode-widget-shadow);
+
+  /* derived tints */
+  --gv-subtle: color-mix(in srgb, var(--gv-fg) 14%, transparent);
+  --gv-faint: color-mix(in srgb, var(--gv-fg) 7%, transparent);
+  --gv-track: color-mix(in srgb, var(--gv-fg) 22%, transparent);
+  --gv-button: var(--vscode-button-background);
+  --gv-checker: repeating-conic-gradient(#cfcfcf 0 25%, #ffffff 0 50%) 0 0 / 6px 6px;
+
+  /* motion */
+  --gv-ease: cubic-bezier(0.2, 0, 0, 1);
+  --gv-fast: 90ms;
+  --gv-medium: 160ms;
+}
+
+/* High contrast: buttons are transparent there; accents use the active contrast border. */
+.vscode-high-contrast,
+.vscode-high-contrast-light {
+  --gv-button: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+  --gv-selected-bg: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --gv-fast: 0ms;
+    --gv-medium: 0ms;
+  }
+}
+
+/* ------------------------------------------------------------------ base */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--gv-bg);
+  color: var(--gv-fg);
+  font-family: var(--gv-font);
+  font-size: var(--gv-font-size);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.is-dragging,
+body.is-dragging * {
+  user-select: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 1px solid var(--gv-focus);
+  outline-offset: -1px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.codicon svg {
+  display: block;
+}
+
+.inline-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: -3px;
+  display: inline-flex;
+}
+
+.inline-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tone-muted {
+  color: var(--gv-fg-muted);
+}
+
+.tone-warn {
+  color: var(--gv-warn);
+}
+
+kbd {
+  display: inline-block;
+  font-family: var(--gv-font);
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  color: var(--vscode-keybindingLabel-foreground, var(--gv-fg));
+  background: var(--vscode-keybindingLabel-background, var(--gv-faint));
+  border: 1px solid var(--vscode-keybindingLabel-border, var(--gv-subtle));
+  border-bottom-color: var(--vscode-keybindingLabel-bottomBorder, var(--gv-subtle));
+  box-shadow: inset 0 -1px 0 var(--vscode-widget-shadow, transparent);
+  vertical-align: 1px;
+}
+
+/* ------------------------------------------------------------------ icon buttons */
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--gv-icon);
+  cursor: pointer;
+  flex: none;
+  transition: background-color var(--gv-fast) var(--gv-ease), opacity var(--gv-fast) var(--gv-ease);
+}
+
+.icon-button:hover {
+  background: var(--gv-toolbar-hover);
+  outline: 1px dashed var(--gv-contrast-active);
+  outline-offset: -1px;
+}
+
+.icon-button:active {
+  background: var(--vscode-toolbar-activeBackground, var(--gv-toolbar-hover));
+}
+
+.icon-button.tiny {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.icon-button.tiny .codicon,
+.icon-button.tiny svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ------------------------------------------------------------------ text buttons */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--gv-radius-sm);
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.button.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.button.secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.button.small {
+  height: 22px;
+  padding: 0 8px 0 6px;
+}
+
+.button .codicon,
+.button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.button:focus-visible {
+  outline-offset: 2px;
+}
+
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px;
+  margin-left: -4px;
+  border: none;
+  border-radius: var(--gv-radius-sm);
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.link-button:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  text-decoration: underline;
+}
+
+.link-button .codicon,
+.link-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ------------------------------------------------------------------ list */
+
+/* The list takes the room the widget leaves and scrolls on its own (it
+   shrinks first, down to about three rows); the widget keeps its natural
+   height, so it never ends up below a second, page-level scroll unless the
+   view is shorter than list minimum + widget. */
+.list {
+  container-type: inline-size;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.list.many {
+  min-height: calc(var(--gv-header-height) * 2 + var(--gv-row-height) * 3 + 6px);
+}
+
+.listbox {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The CURSOR section: fixed above the scroller (pins never slide under it). */
+.list-top {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-top:empty {
+  display: none;
+}
+
+/* Only the pins scroll (or everything, when the cursor section is tall). */
+.list-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+}
+
+/* The PINNED header (with its count) stays at the top of the scroller. */
+.section-header.pin-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-top: 1px solid var(--gv-section-border);
+  background-color: var(--gv-bg);
+  background-image: linear-gradient(var(--gv-section-bg), var(--gv-section-bg));
+}
+
+/* A visible seam between the fixed cursor row and the pins. */
+.list.split .list-top {
+  padding-bottom: 2px;
+}
+
+/* Scroll shadows (VS Code's scrollbar shadow) when rows are hidden above / below. */
+.scroll-shadow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 6px 1px var(--vscode-scrollbar-shadow, var(--gv-shadow));
+  transition: opacity var(--gv-fast) var(--gv-ease);
+}
+
+.scroll-shadow.bottom {
+  bottom: 0;
+}
+
+.scroll-shadow.visible {
+  opacity: 1;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--gv-header-height);
+  padding: 0 8px 0 2px;
+  border: none;
+  border-top: 1px solid var(--gv-section-border);
+  background: var(--gv-section-bg);
+  color: var(--gv-section-fg);
+  font-size: var(--gv-font-size-small);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+  width: 100%;
+}
+
+.section-header:first-child {
+  border-top-color: transparent;
+}
+
+.section-chevron {
+  transform: rotate(90deg);
+  transition: transform var(--gv-fast) var(--gv-ease);
+}
+
+.section-header.collapsed .section-chevron {
+  transform: rotate(0deg);
+}
+
+.section-title {
+  flex: none;
+}
+
+.section-meta {
+  margin-left: auto;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--gv-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  padding-left: 8px;
+}
+
+.count-badge {
+  margin-left: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--gv-row-height);
+  padding: 0 4px 0 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--gv-fg);
+  transition: background-color var(--gv-fast) var(--gv-ease);
+}
+
+.line:hover {
+  background: var(--gv-hover);
+  color: var(--vscode-list-hoverForeground, var(--gv-fg));
+}
+
+.line.selected {
+  background: var(--gv-selected-bg);
+  color: var(--gv-selected-fg);
+  box-shadow: inset 2px 0 0 var(--gv-focus);
+}
+
+.listbox:focus-visible {
+  outline: none;
+}
+
+.listbox:focus .line.selected {
+  background: var(--gv-selected-focus-bg);
+  color: var(--gv-selected-focus-fg);
+}
+
+.listbox:focus-visible .line.selected {
+  outline: 1px solid var(--vscode-list-focusOutline, var(--gv-focus));
+  outline-offset: -1px;
+}
+
+.vscode-high-contrast .line:hover,
+.vscode-high-contrast-light .line:hover {
+  outline: 1px dashed var(--gv-contrast-active);
+  outline-offset: -1px;
+}
+
+.vscode-high-contrast .line.selected,
+.vscode-high-contrast-light .line.selected {
+  outline: 1px solid var(--gv-contrast-active);
+  outline-offset: -1px;
+}
+
+.line.child {
+  padding-left: 22px;
+}
+
+.line.child::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--vscode-tree-indentGuidesStroke, var(--gv-subtle));
+  opacity: 0.6;
+}
+
+.line.flash {
+  animation: gv-flash 700ms var(--gv-ease);
+}
+
+@keyframes gv-flash {
+  0%,
+  30% {
+    background: color-mix(in srgb, var(--gv-focus) 35%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.twistie {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--gv-icon);
+  margin-right: -2px;
+}
+
+.line.child .twistie {
+  display: none;
+}
+
+.twistie .codicon {
+  transition: transform var(--gv-fast) var(--gv-ease);
+}
+
+.twistie.open .codicon {
+  transform: rotate(90deg);
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 2px;
+}
+
+.label.tone-muted {
+  color: var(--gv-fg-muted);
+}
+
+.label.tone-stale {
+  color: var(--gv-fg-muted);
+  font-style: italic;
+}
+
+.line.child .label {
+  color: var(--gv-fg-muted);
+  font-size: 12px;
+}
+
+.line.child.selected .label {
+  color: inherit;
+}
+
+.badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 45%;
+  font-size: var(--gv-font-size-small);
+  color: var(--gv-fg-muted);
+  opacity: 0.9;
+}
+
+.badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Not enough room (List.fitBadge): the file icon only, name in the tooltip. */
+.badge.compact .badge-text {
+  display: none;
+}
+
+.badge.compact .badge-icon {
+  display: inline-flex;
+  opacity: 0.8;
+}
+
+.badge-icon {
+  display: none;
+  width: 14px;
+  height: 14px;
+}
+
+.badge-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+@container (max-width: 240px) {
+  .badge {
+    flex: none;
+    display: inline-flex;
+  }
+  .badge-text {
+    display: none;
+  }
+  .badge-icon {
+    display: inline-flex;
+    opacity: 0.8;
+  }
+}
+
+.preview {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--gv-fg);
+  opacity: 0.88;
+  margin-left: 4px;
+}
+
+.line.selected .preview {
+  opacity: 1;
+}
+
+.preview .num {
+  padding: 0 3px;
+  border-radius: var(--gv-radius-sm);
+  cursor: ew-resize;
+  line-height: 18px;
+  transition: background-color var(--gv-fast) var(--gv-ease);
+}
+
+.preview .num:hover,
+.preview .num.dragging {
+  background: var(--gv-toolbar-hover);
+  outline: 1px dashed var(--gv-contrast-active);
+}
+
+.preview .num.dragging {
+  color: var(--vscode-textLink-foreground);
+}
+
+.preview .num.locked {
+  cursor: default;
+  color: var(--gv-fg-muted);
+  font-style: italic;
+}
+
+.preview .num.locked:hover {
+  background: transparent;
+}
+
+.preview-text {
+  font-family: var(--gv-font);
+  font-size: var(--gv-font-size-small);
+  padding-right: 3px;
+}
+
+/* "not found": a warning pill, so it never reads as plain muted text (Light
+   Modern's list.warningForeground is close to descriptionForeground). */
+.preview-text.tone-warn {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  margin-right: 2px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--gv-warn) 55%, transparent);
+  background: color-mix(in srgb, var(--gv-warn) 16%, transparent);
+  color: var(--gv-warn-text);
+  font-style: italic;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.vscode-high-contrast .preview-text.tone-warn,
+.vscode-high-contrast-light .preview-text.tone-warn {
+  background: transparent;
+  border-color: var(--gv-warn);
+}
+
+.preview-strip {
+  display: block;
+  width: 56px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--gv-subtle);
+  margin-right: 3px;
+}
+
+.skeleton {
+  display: block;
+  width: 64px;
+  height: 8px;
+  border-radius: 4px;
+  margin-right: 3px;
+  background: linear-gradient(90deg, var(--gv-faint) 0%, var(--gv-subtle) 50%, var(--gv-faint) 100%) 0 0 / 200% 100%;
+  animation: gv-shimmer 1.2s linear infinite;
+}
+
+@keyframes gv-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.inline-edit {
+  width: 72px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+  background: var(--gv-input-bg);
+  color: var(--gv-input-fg);
+  border: 1px solid var(--gv-focus);
+  border-radius: var(--gv-radius-sm);
+  outline: none;
+}
+
+.row-action {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  opacity: 0;
+  margin-left: 2px;
+}
+
+.line:hover .row-action,
+.line.selected .row-action,
+.row-action.always,
+.row-action:focus-visible {
+  opacity: 1;
+}
+
+.row-action.always:not(.on) {
+  color: var(--gv-fg-muted);
+}
+
+.line:hover .row-action.always,
+.line.selected .row-action.always {
+  color: inherit;
+}
+
+.row-action.on {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Rows without a pin/unpin button keep its column: every preview ends at the same x. */
+.line:not(.has-action)::after {
+  content: '';
+  flex: none;
+  width: 22px;
+}
+
+.pins-empty {
+  padding: 3px var(--gv-gutter) 6px 28px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--gv-fg-muted);
+}
+
+/* ------------------------------------------------------------------ glyphs */
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--gv-icon);
+}
+
+.glyph svg {
+  display: block;
+}
+
+/* Tones beat the default icon color (a stale pin keeps a yellow warning icon, also when selected). */
+.glyph.tone-warn {
+  color: var(--gv-warn);
+}
+
+.glyph.tone-muted {
+  color: var(--gv-fg-muted);
+}
+
+.gauge-track {
+  stroke: var(--gv-track);
+}
+
+.gauge-value {
+  stroke: var(--gv-accent);
+}
+
+.dot-frame {
+  stroke: color-mix(in srgb, var(--gv-fg) 45%, transparent);
+  stroke-width: 1.2;
+}
+
+.dot-point {
+  fill: var(--gv-accent);
+}
+
+.glyph-swatch {
+  padding: 2px;
+  border-radius: 3px;
+}
+
+.glyph-swatch.has-alpha {
+  background: var(--gv-checker);
+  background-clip: content-box;
+}
+
+.swatch-fill,
+.strip-fill {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--gv-radius-sm);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gv-fg) 22%, transparent);
+}
+
+.glyph-arrow {
+  color: var(--gv-accent);
+}
+
+.glyph-arrow .arrow-flat {
+  display: none;
+}
+
+.glyph-arrow.flat .arrow-g {
+  display: none;
+}
+
+.glyph-arrow.flat .arrow-flat {
+  display: block;
+}
+
+/* ------------------------------------------------------------------ divider */
+
+.divider {
+  flex: none;
+  height: 1px;
+  background: var(--vscode-sideBarSectionHeader-border, var(--gv-subtle));
+}
+
+/* ------------------------------------------------------------------ widget area */
+
+.widget-area {
+  flex: 0 0 auto;
+  min-height: var(--gv-widget-min-height);
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+
+.widget-header {
+  flex: none;
+  padding: 8px var(--gv-gutter) 0;
+}
+
+.widget-header.empty {
+  visibility: hidden;
+}
+
+.widget-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+
+.widget-title {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.widget-sub-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding-left: 22px;
+  min-width: 0;
+}
+
+.widget-badges {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  height: 18px;
+  align-items: center;
+  font-size: var(--gv-font-size-small);
+  color: var(--gv-fg-muted);
+  white-space: nowrap;
+}
+
+/* "Pinned · <- Cursor": the widget is locked to a pin; always at the same place. */
+.follow {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding-left: 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gv-focus) 16%, transparent);
+  color: var(--gv-fg);
+  font-size: var(--gv-font-size-small);
+  animation: gv-fade-in var(--gv-medium) var(--gv-ease);
+}
+
+.vscode-high-contrast .follow,
+.vscode-high-contrast-light .follow {
+  background: transparent;
+  outline: 1px solid var(--gv-contrast-active);
+}
+
+.pinned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--vscode-textLink-foreground);
+}
+
+.pinned-chip .codicon,
+.pinned-chip svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pinned-label {
+  color: var(--gv-fg);
+}
+
+.follow-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0 8px 0 6px;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--gv-fg) 18%, transparent);
+  border-radius: 0 10px 10px 0;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font-size: var(--gv-font-size-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.follow-button:hover {
+  background: var(--gv-toolbar-hover);
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
+.follow-button:focus-visible {
+  outline: 1px solid var(--gv-focus);
+  outline-offset: -1px;
+}
+
+.follow-button .codicon,
+.follow-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* The title line holds the follow chip, the Color|Vector toggle and go to
+   source: on a pin in a narrow view they drop their labels (tooltips keep
+   them) so the title keeps some room. */
+@container (max-width: 340px) {
+  .widget-area.on-pin .segment-label,
+  .widget-area.on-pin .pinned-label {
+    display: none;
+  }
+  .widget-area.on-pin .segment {
+    padding: 0 4px;
+  }
+}
+
+/* Meta chips: the type stays, descriptive chips shrink first, the location last. */
+.badge-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-chip.lead {
+  flex: none;
+}
+
+.badge-chip.loc {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.badge-chip + .badge-chip::before {
+  content: '·';
+  padding: 0 5px;
+  opacity: 0.7;
+}
+
+.widget-body {
+  position: relative;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 10px var(--gv-gutter) 4px;
+}
+
+.widget-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 120ms var(--gv-ease);
+}
+
+.widget-pane.entering {
+  animation: gv-fade-in 120ms var(--gv-ease);
+}
+
+@keyframes gv-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.widget-pane.leaving {
+  animation: gv-fade-out 120ms var(--gv-ease) forwards;
+  position: absolute;
+  top: 10px;
+  left: var(--gv-gutter);
+  right: var(--gv-gutter);
+  pointer-events: none;
+}
+
+@keyframes gv-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.widget-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px var(--gv-gutter) 6px;
+}
+
+.notice {
+  margin-left: auto;
+  font-size: var(--gv-font-size-small);
+  color: var(--gv-fg-muted);
+  opacity: 0;
+  transition: opacity var(--gv-medium) var(--gv-ease);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice.visible {
+  opacity: 1;
+}
+
+.notice.warn {
+  color: var(--gv-warn-text);
+}
+
+.widget-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--gv-font-size-small);
+  color: var(--gv-fg-muted);
+  line-height: 16px;
+}
+
+.widget-hint .inline-icon {
+  opacity: 0.8;
+}
+
+.widget-hint .reset-link {
+  font-size: var(--gv-font-size-small);
+  height: 20px;
+}
+
+/* Hidden until the value differs from its reset point (keeps the hint line from jumping). */
+.widget-hint .reset-link.invisible {
+  visibility: hidden;
+}
+
+.hint-extra {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ segmented */
+
+.segmented {
+  display: inline-flex;
+  align-items: stretch;
+  height: 22px;
+  padding: 1px;
+  gap: 1px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-input-border, var(--gv-subtle));
+  background: var(--gv-input-bg);
+  flex: none;
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--gv-fg-muted);
+  font-size: var(--gv-font-size-small);
+  cursor: pointer;
+}
+
+.segment .codicon,
+.segment svg {
+  width: 13px;
+  height: 13px;
+}
+
+.segment:hover {
+  color: var(--gv-fg);
+  background: var(--gv-toolbar-hover);
+}
+
+.segment.active {
+  color: var(--vscode-inputOption-activeForeground, var(--gv-fg));
+  background: var(--vscode-inputOption-activeBackground, var(--gv-subtle));
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+}
+
+@container (max-width: 320px) {
+  .vector-meta .button-label {
+    display: none;
+  }
+  .vector-meta .button.small {
+    padding: 0 4px;
+  }
+}
+
+@container (max-width: 250px) {
+  .segment-label {
+    display: none;
+  }
+  .segment {
+    padding: 0 4px;
+  }
+}
+
+/* ------------------------------------------------------------------ number fields */
+
+.num-field {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: var(--gv-input-height);
+  min-width: 0;
+  background: var(--gv-input-bg);
+  border: 1px solid var(--gv-input-border);
+  border-radius: var(--gv-radius-sm);
+  overflow: hidden;
+}
+
+.num-field.focused {
+  border-color: var(--gv-focus);
+}
+
+.num-field.invalid {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--gv-error));
+  animation: gv-shake 240ms var(--gv-ease);
+}
+
+@keyframes gv-shake {
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+.num-field[class*='axis-'] {
+  box-shadow: inset 2px 0 0 var(--gv-axis-color, transparent);
+}
+
+.axis-x {
+  --gv-axis-color: var(--gv-axis-x);
+}
+.axis-y {
+  --gv-axis-color: var(--gv-axis-y);
+}
+.axis-z {
+  --gv-axis-color: var(--gv-axis-z);
+}
+.axis-w {
+  --gv-axis-color: var(--gv-axis-w);
+}
+
+.num-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  padding-left: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gv-fg-muted);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.num-label:hover,
+.num-label.dragging {
+  color: var(--gv-fg);
+  background: var(--gv-faint);
+}
+
+.num-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 5px;
+  border: none;
+  background: transparent;
+  color: var(--gv-input-fg);
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.num-field:not([class*='axis-']) .num-input {
+  padding-left: 6px;
+}
+
+.num-field.md {
+  flex: none;
+  width: 70px;
+}
+
+.num-field.sm {
+  height: 20px;
+  width: 54px;
+  flex: none;
+}
+
+.num-field.sm .num-input {
+  font-size: 11px;
+  padding: 0 4px;
+}
+
+.num-field.readonly,
+.num-field.locked {
+  background: transparent;
+  border-color: var(--gv-subtle);
+  border-style: dashed;
+}
+
+.num-field.readonly .num-input,
+.num-field.locked .num-input {
+  color: var(--gv-fg-muted);
+}
+
+.num-field.locked .num-input {
+  font-style: italic;
+}
+
+.num-field.scrub-field:not(.focused) .num-input {
+  cursor: ew-resize;
+  caret-color: transparent;
+}
+
+.num-field.scrub-field:not(.focused):hover {
+  border-color: color-mix(in srgb, var(--gv-fg) 30%, transparent);
+}
+
+.num-field.scrub-field.dragging,
+.num-field.scrub-field:has(.dragging) {
+  border-color: var(--gv-focus);
+}
+
+.inputs {
+  display: grid;
+  gap: 4px;
+}
+
+.inputs.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.inputs.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.inputs.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* ------------------------------------------------------------------ slider */
+
+.slider {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 22px;
+  cursor: pointer;
+  touch-action: none;
+  border-radius: var(--gv-radius-sm);
+}
+
+.slider:focus-visible {
+  outline: none;
+}
+
+.slider-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  right: 7px;
+}
+
+.slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--gv-track);
+}
+
+.slider-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: var(--gv-button);
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gv-button);
+  border: 2px solid var(--gv-bg);
+  box-shadow: 0 0 0 1px var(--gv-button);
+  transform: translate(-50%, -50%);
+  transition: scale var(--gv-fast) var(--gv-ease);
+}
+
+.slider:hover .slider-thumb,
+.slider.dragging .slider-thumb {
+  scale: 1.15;
+}
+
+.slider:focus-visible .slider-thumb {
+  outline: 1px solid var(--gv-focus);
+  outline-offset: 2px;
+}
+
+.slider.locked {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.slider.out-of-range .slider-thumb {
+  background: var(--gv-warn);
+  box-shadow: 0 0 0 1px var(--gv-warn);
+}
+
+.slider-ticks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
+}
+
+.slider-tick {
+  position: absolute;
+  top: 5px;
+  width: 1px;
+  height: 3px;
+  margin-left: -0.5px;
+  background: var(--gv-track);
+}
+
+.slider.compact {
+  height: 20px;
+}
+
+.slider.compact .slider-thumb {
+  width: 12px;
+  height: 12px;
+}
+
+/* ------------------------------------------------------------------ float widget */
+
+.float-control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.float-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.range-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-mid {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.range-caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--gv-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.range-src-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.range-caption .codicon,
+.range-caption svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+
+/* A #iUniform range reads as "fixed by the source": dashed fields + lock + label. */
+.range-caption[data-src='uniform'] {
+  color: var(--gv-fg);
+}
+
+.w-float .float-control {
+  gap: 4px;
+}
+
+.w-float .range-line {
+  padding-right: 78px; /* align under the track, not the value field */
+}
+
+.w-float .widget-hint {
+  margin-top: 4px;
+}
+
+/* ------------------------------------------------------------------ canvases */
+
+.canvas-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.pad-canvas,
+.ball-canvas {
+  display: block;
+  width: min(100%, var(--gv-canvas-max));
+  aspect-ratio: 1;
+  border-radius: var(--gv-radius);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.ball-canvas {
+  cursor: grab;
+}
+
+.ball-canvas.dragging {
+  cursor: grabbing;
+}
+
+.pad-canvas:focus-visible,
+.ball-canvas:focus-visible,
+.sv-canvas:focus-visible,
+.hue-canvas:focus-visible,
+.alpha-canvas:focus-visible {
+  outline: 1px solid var(--gv-focus);
+  outline-offset: 2px;
+}
+
+.w-trackpad .range-line,
+.w-trackpad .inputs,
+.w-vector .vector-meta,
+.w-vector .inputs,
+.w-vector .float-control,
+.w-color > *:not(.sv-wrap) {
+  width: min(100%, var(--gv-canvas-max));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ------------------------------------------------------------------ color picker */
+
+.sv-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 8px;
+  width: min(100%, calc(var(--gv-canvas-max) + 24px));
+  margin: 0 auto;
+}
+
+.sv-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--gv-radius);
+  cursor: crosshair;
+  touch-action: none;
+  box-shadow: 0 0 0 1px var(--gv-faint);
+}
+
+.hue-wrap {
+  position: relative;
+}
+
+.hue-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--gv-radius);
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.w-color .sv-wrap {
+  width: min(100%, calc(var(--gv-canvas-max) + 24px));
+}
+
+.w-color > *:not(.sv-wrap) {
+  width: min(100%, calc(var(--gv-canvas-max) + 24px));
+}
+
+.alpha-canvas {
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: 3px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.color-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.swatch-pair {
+  display: inline-flex;
+  flex: none;
+  height: 22px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--gv-subtle);
+  background: var(--gv-checker);
+}
+
+.swatch-old,
+.swatch-new {
+  display: block;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.swatch-old {
+  cursor: pointer;
+  position: relative;
+}
+
+.swatch-old:hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px var(--gv-focus);
+}
+
+.swatch-old .swatch-fill,
+.swatch-new .swatch-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.hex-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: var(--gv-input-height);
+  background: var(--gv-input-bg);
+  border: 1px solid var(--gv-input-border);
+  border-radius: var(--gv-radius-sm);
+}
+
+.hex-field:focus-within {
+  border-color: var(--gv-focus);
+}
+
+.hex-hash {
+  padding-left: 6px;
+  color: var(--gv-fg-muted);
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+}
+
+.hex-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px 0 1px;
+  border: none;
+  background: transparent;
+  color: var(--gv-input-fg);
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+  text-transform: uppercase;
+  outline: none;
+}
+
+.hex-input.invalid {
+  color: var(--gv-error);
+}
+
+.intensity-row .stack-label {
+  width: 56px;
+}
+
+/* ------------------------------------------------------------------ direction picker */
+
+.vector-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 22px;
+}
+
+.len-readout {
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--gv-fg-muted);
+}
+
+.vector-meta .button {
+  margin-left: auto;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox {
+  appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-checkbox-border, var(--gv-subtle));
+  background: var(--vscode-checkbox-background, var(--gv-input-bg));
+  cursor: pointer;
+}
+
+.checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--vscode-checkbox-foreground, var(--gv-fg));
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.checkbox:focus-visible {
+  outline: 1px solid var(--gv-focus);
+  outline-offset: 1px;
+}
+
+.zero-hint {
+  display: none;
+  justify-content: center;
+}
+
+.zero-hint.visible {
+  display: flex;
+}
+
+/* ------------------------------------------------------------------ slider stack */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: calc(8 * 26px);
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.stack-row {
+  min-width: 0;
+}
+
+.stack-row .float-main {
+  gap: 6px;
+}
+
+.stack-label {
+  flex: none;
+  width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--gv-fg-muted);
+}
+
+.stack-label[class*='axis-'] {
+  width: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--gv-axis-color);
+}
+
+.stack-row .num-field.md {
+  width: 64px;
+}
+
+.vector-child .float-main {
+  height: 22px;
+}
+
+.stack-nums {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--gv-mono);
+  font-size: var(--gv-mono-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ palette */
+
+.strip-wrap {
+  position: relative;
+}
+
+.strip-canvas {
+  display: block;
+  width: 100%;
+  height: 28px;
+  border-radius: var(--gv-radius);
+  cursor: crosshair;
+}
+
+.strip-tip {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--gv-mono);
+  font-size: 11px;
+  white-space: pre;
+  pointer-events: none;
+  background: var(--vscode-editorHoverWidget-background, var(--gv-input-bg));
+  color: var(--vscode-editorHoverWidget-foreground, var(--gv-fg));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--gv-subtle));
+  box-shadow: 0 2px 8px var(--gv-shadow, transparent);
+  opacity: 0;
+  transition: opacity var(--gv-fast) var(--gv-ease);
+}
+
+.strip-tip.visible {
+  opacity: 1;
+}
+
+.curves-canvas {
+  display: block;
+  width: 100%;
+  height: 56px;
+  border-radius: var(--gv-radius);
+}
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: minmax(46px, auto) 12px repeat(3, minmax(0, 1fr)) 20px;
+  column-gap: 4px;
+  row-gap: 4px;
+  align-items: center;
+}
+
+.palette-head,
+.palette-row {
+  display: contents;
+}
+
+.palette-col {
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--gv-axis-color);
+  text-transform: uppercase;
+  line-height: 12px;
+}
+
+.palette-key {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.palette-key b {
+  font-family: var(--gv-mono);
+  font-weight: 600;
+}
+
+.palette-role {
+  font-size: 10px;
+  color: var(--gv-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container (max-width: 270px) {
+  .palette-role {
+    display: none;
+  }
+}
+
+.mini-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--gv-radius-sm);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gv-fg) 22%, transparent);
+}
+
+.mini-swatch.hidden {
+  display: block !important;
+  visibility: hidden;
+}
+
+.palette-grid .num-field.sm {
+  width: auto;
+}
+
+/* A coefficient not written in the source (c of `a + b*cos(2π(t + d))`). */
+.palette-row.implicit .palette-go {
+  visibility: hidden;
+}
+
+.palette-row.implicit .palette-role {
+  font-style: italic;
+}
+
+.palette-go {
+  width: 20px;
+  height: 20px;
+  color: var(--gv-fg-muted);
+}
+
+.palette-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.palette-formula {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--gv-mono);
+  font-size: 11px;
+  color: var(--gv-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 10;
+  min-width: 170px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--vscode-menu-background, var(--gv-input-bg));
+  color: var(--vscode-menu-foreground, var(--gv-fg));
+  border: 1px solid var(--vscode-menu-border, var(--gv-subtle));
+  box-shadow: 0 2px 8px var(--gv-shadow, rgba(0, 0, 0, 0.3));
+  display: flex;
+  flex-direction: column;
+  animation: gv-pop var(--gv-fast) var(--gv-ease);
+}
+
+@keyframes gv-pop {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--gv-hover));
+  color: var(--vscode-menu-selectionForeground, inherit);
+  outline: none;
+}
+
+.menu-strip {
+  width: 48px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ empty states */
+
+.empty-state {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 16px 8px 8px;
+  min-height: 180px;
+  color: var(--gv-fg-muted);
+}
+
+.empty-icon {
+  width: 28px;
+  height: 28px;
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
+
+.empty-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.empty-icon.tone-warn {
+  color: var(--gv-warn);
+  opacity: 1;
+}
+
+.empty-title {
+  font-weight: 600;
+  color: var(--gv-fg);
+}
+
+.empty-help {
+  font-size: 12px;
+  max-width: 260px;
+  line-height: 1.45;
+}
+
+.empty-tip {
+  margin-top: 6px;
+  font-size: 11px;
+  max-width: 260px;
+  line-height: 1.6;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ scrollbars (match VS Code) */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

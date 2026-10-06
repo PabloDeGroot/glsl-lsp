@@ -18,6 +18,8 @@ export interface Settings {
   colors: { mode: ColorMode };
   shadertoy: { enable: boolean };
   index: { exclude: string[]; maxFiles: number };
+  /** Values panel. Read by the extension client only; mirrored here so package.json and the defaults stay in sync. */
+  values: { throttleMs: number; maxDecimals: number; followCursor: boolean };
   trace: { server: 'off' | 'messages' | 'verbose' };
 }
 
@@ -33,6 +35,7 @@ export const defaultSettings: Settings = {
   colors: { mode: 'heuristic' },
   shadertoy: { enable: true },
   index: { exclude: ['node_modules', '.git', 'out', 'dist', '.vscode-test'], maxFiles: 10000 },
+  values: { throttleMs: 33, maxDecimals: 4, followCursor: true },
   trace: { server: 'off' },
 };
 

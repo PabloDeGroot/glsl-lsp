@@ -1,6 +1,9 @@
 **
 !dist/client.js
 !dist/server.js
+!dist/webview.js
+!dist/webview.css
+!media/**
 !syntaxes/**
 !language-configuration.json
 !package.json

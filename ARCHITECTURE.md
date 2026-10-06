@@ -7,6 +7,9 @@ core results into LSP responses.
 
 ```
 client/src/extension.ts        LanguageClient, commands, file watcher
+client/src/values/             Values panel controller: view provider, cursor, pins, edits, nudge
+webview/src/                   Values panel UI (plain TS + DOM + canvas), bundled to dist/webview.js/.css
+shared/                        types and math shared by server, client and webview (no imports)
 server/src/server.ts           connection, document sync, settings, capabilities, feature registration
 server/src/context.ts          ServerContext handed to every feature
 server/src/settings.ts         glslLsp.* settings (defaults + change event)
@@ -15,11 +18,14 @@ server/src/builtins/           builtin functions/variables/types/keywords/direct
 server/src/features/<name>.ts  one file per LSP feature, each exports register(ctx)
 syntaxes/, language-configuration.json   TextMate grammar and editor behaviour
 test/                          vitest tests, test/fixtures/ on-disk projects
+docs/VALUES.md                 full design of the Values panel
 ```
 
 Build: `npm run build` bundles `client/src/extension.ts` -> `dist/client.js`
 and `server/src/server.ts` -> `dist/server.js` with esbuild
-(`scripts/build.mjs`). `npm run typecheck` runs tsc over everything,
+(`scripts/build.mjs`), and `webview/src/main.ts` -> `dist/webview.js` +
+`dist/webview.css` for the browser. `npm run typecheck` runs tsc over everything
+(the root `tsconfig.json`, then `webview/tsconfig.json` with the DOM libraries),
 `npm test` runs vitest.
 
 ## Principles
@@ -457,6 +463,51 @@ geometry words (`dir`, `pos`, `normal`...), geometric callees (`normalize`,
 `dot`...) and scalar targets. `formatColorPresentation` keeps the user's constructor and
 number style.
 
+## Values panel (`docs/VALUES.md`)
+
+An Activity Bar container **GLSL** with one webview view `glslLsp.values`:
+a list (cursor row first, then pins) and a widget area for the selected row.
+Three layers talk through `shared/valuesProtocol.ts`, which imports nothing
+so every tsconfig can use it:
+
+```
+editor cursor / document change
+   │
+client/src/values/controller.ts ── glslLsp/valueTargets {uri, position?, anchors?} ──► server/src/features/values.ts
+   │   rows + selection (StateMessage, one per frame)              computeValueTargets: ValueTarget[]
+   ▼
+webview/src/main.ts ── List (rows) + WidgetHost (slider / trackpad / color / trackball / stack / palette)
+   │   editBegin / editUpdate (throttled) / editEnd, editOnce, select, pin, unpin, setRowOptions, ...
+   ▼
+client/src/values/edits.ts ── EditApplier: snapshot at begin, rebuild the span per update, one undo step
+```
+
+- **Server** (`server/src/features/values/`): pure detection on the token
+  stream of a `FileModel`. `analysis.ts` finds candidate specs (float
+  literals with their unary minus, `vecN`/`colorN` constructors, `#iUniform`
+  and `#define` values, iq palettes, multi-literal statements), `cursor.ts`
+  picks the one at the cursor, `build.ts`/`labels.ts` make `ValueTarget`s
+  (with a fresh `PinAnchor`), `anchors.ts` re-finds pins: declaration name,
+  then exact line fingerprint, then fuzzy fingerprint, never retargeting a
+  different named declaration. `colorish` reuses `plausiblyColor` from
+  `colors.ts`. No capability is advertised; unknown documents answer `null`.
+- **Client** (`client/src/values/`): `controller.ts` owns the view model
+  (cursor row, pins from `PinStore` in `workspaceState`, selection, row
+  options) and debounces queries per document, dropping stale responses by
+  sequence number and document version. `edits.ts` applies gestures: with a
+  visible editor, undo stops make each gesture one undo step; files without an
+  editor go through `WorkspaceEdit` (best effort). A user edit inside the span
+  aborts the gesture (`editRejected`). The pure parts (`editText.ts` number
+  writing, `nudgeCore.ts`, `pins.ts`, `rows.ts`) have no `vscode` import
+  and are unit tested.
+- **Webview** (`webview/src/`): `store.ts` keeps the last state plus
+  optimistic overrides so nothing snaps back while the document catches up;
+  `bridge.ts` throttles gestures to `settings.throttleMs`; `math/*` is pure
+  and unit tested. Colours come only from `--vscode-*` theme variables, the
+  HTML (`client/src/values/html.ts`) has a strict CSP with a per-load nonce.
+  `webview/dev/harness.html` renders the bundle in a browser with a fake
+  VS Code API and sample scenes (not shipped).
+
 ## Builtins (`server/src/builtins`)
 
 `types.ts` defines `BuiltinFunction` (overloads with named params, doc,
@@ -499,16 +550,24 @@ doc, a category and unique overloads.
 - `test/e2e/server.e2e.test.ts` builds `dist/server.js` and spawns it over
   stdio with `vscode-jsonrpc`. It initializes on the parent shader workspace
   (or `GLSL_LSP_E2E_ROOT`) and checks the following:
-  - index time is under 5 s;
+  - index time is under the ceiling (15 s, `GLSL_LSP_E2E_INDEX_MS`);
   - hover shows `//` docs and LYGIA YAML docs;
   - completion with an auto-include edit;
   - definition, signature help, document symbols and semantic tokens;
   - every shader in the workspace has zero error diagnostics;
-  - a deliberate type error is reported by glslang.
+  - a deliberate type error is reported by glslang;
+  - `glslLsp/valueTargets` on `main.glsl`: `#iUniform u_speed` with its range,
+    `u_tint` as a colorish `color3`, a float literal, a `vec2`, and pins that
+    follow inserted lines and go stale when their line is deleted.
 
   Set `GLSL_LSP_E2E_NO_BUILD=1` to test the minified bundle produced by
   `npm run package`.
 - Feature tests call the exported pure functions (e.g. `computeHover`).
+- Values panel: `test/values.server.*` (detection, anchors, real shaders),
+  `test/values.client.*` (number writing, nudge, pins), `test/values.webview.*`
+  (widget math), `test/valuesMath.test.ts` (shared formatting) and
+  `test/values.integration.test.ts`, which runs a server target through the
+  webview's widget choice and the client's edit builder and back.
 
 ## Packaging
 
@@ -516,5 +575,5 @@ doc, a category and unique overloads.
 source maps, and then `vsce package --no-dependencies`. `vscode-languageclient`
 and `vscode-languageserver` are bundled into `dist/*.js`, so no
 `node_modules` ship. `.vscodeignore` whitelists `dist/client.js`,
-`dist/server.js`, `syntaxes/`, `language-configuration.json`, README,
+`dist/server.js`, `dist/webview.js`, `dist/webview.css`, `media/` (the view icon), `syntaxes/`, `language-configuration.json`, README,
 CHANGELOG and LICENSE.

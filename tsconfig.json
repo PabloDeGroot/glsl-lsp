@@ -15,5 +15,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["client/src", "server/src", "test", "scripts", "vitest.config.mts"]
+  "include": ["client/src", "server/src", "shared", "test", "scripts", "vitest.config.mts"]
 }

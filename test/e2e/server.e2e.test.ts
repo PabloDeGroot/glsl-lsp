@@ -24,6 +24,7 @@ import type {
   SignatureHelp,
 } from 'vscode-languageserver-protocol';
 import { URI } from 'vscode-uri';
+import { VALUE_TARGETS_REQUEST, type ValueTargetsResult } from '../../shared/valuesProtocol';
 
 const REPO = resolve(__dirname, '..', '..');
 const ROOT = process.env.GLSL_LSP_E2E_ROOT ?? resolve(REPO, '..');
@@ -282,4 +283,107 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     expect(errors.map((d) => d.range.start.line)).toContain(4);
     conn.sendNotification('textDocument/didClose', { textDocument: { uri: uriOf(rel) } });
   }, 30_000);
+
+  // ---------------------------------------------------------------- Values panel (glslLsp/valueTargets)
+
+  describe('Values panel: glslLsp/valueTargets', () => {
+    const rel = 'main.glsl';
+    let version = 100;
+    const sync = (text: string) => {
+      version++;
+      conn.sendNotification('textDocument/didChange', { textDocument: { uri: uriOf(rel), version }, contentChanges: [{ text }] });
+      return version;
+    };
+    const at = (text: string, needle: string, delta = 0) => positionOf(text, needle, 0, delta);
+    const cursor = async (text: string, needle: string, delta = 0) => {
+      const r = await conn.sendRequest<ValueTargetsResult>(VALUE_TARGETS_REQUEST, { uri: uriOf(rel), position: at(text, needle, delta) });
+      return r;
+    };
+
+    it('#iUniform float u_speed: float with its `in { min, max }` range', async () => {
+      const text = textOf(rel);
+      const v = sync(text);
+      const r = await cursor(text, '#iUniform float u_speed', '#iUniform float u_'.length);
+      expect(r.version).toBe(v);
+      const t = r.cursor!;
+      expect(t).toBeTruthy();
+      expect(t.kind).toBe('float');
+      expect(t.name).toBe('u_speed');
+      expect(t.declKind).toBe('iUniform');
+      expect(t.uniform).toMatchObject({ declaredType: 'float', min: 0, max: 4 });
+      expect(t.components).toHaveLength(1);
+      expect(t.components[0]).toMatchObject({ value: 1, text: '1.0', editable: true });
+      // The component range really covers the default literal in the document.
+      const line = text.split(/\r?\n/)[t.components[0].range.start.line];
+      expect(line.slice(t.components[0].range.start.character, t.components[0].range.end.character)).toBe('1.0');
+      expect(t.uri.toLowerCase()).toBe(uriOf(rel).toLowerCase());
+    });
+
+    it('#iUniform color3 u_tint: colorish vec3 with three editable components', async () => {
+      const text = textOf(rel);
+      const r = await cursor(text, 'color3(1.0, 0.78, 0.55)', 'color3('.length + 6);
+      const t = r.cursor!;
+      expect(t.kind).toBe('vec3');
+      expect(t.name).toBe('u_tint');
+      expect(t.ctor).toBe('color3');
+      expect(t.colorish).toBe(true);
+      expect(t.uniform?.declaredType).toBe('color3');
+      expect(t.components.map((c) => c.value)).toEqual([1, 0.78, 0.55]);
+      expect(t.components.every((c) => c.editable)).toBe(true);
+    });
+
+    it('a plain float literal inside an expression', async () => {
+      const text = textOf(rel);
+      const r = await cursor(text, 'rotate2d(-t * 0.25)', 'rotate2d(-t * 0.2'.length);
+      const t = r.cursor!;
+      expect(t.kind).toBe('float');
+      expect(t.uniform).toBeUndefined();
+      expect(t.components[0]).toMatchObject({ value: 0.25, text: '0.25', editable: true });
+    });
+
+    it('a vec2 constructor argument', async () => {
+      const text = textOf(rel);
+      const r = await cursor(text, 'vec2(0.42, 0.26)', 2);
+      const t = r.cursor!;
+      expect(t.kind).toBe('vec2');
+      expect(t.components.map((c) => c.value)).toEqual([0.42, 0.26]);
+      expect(t.colorish).toBe(false);
+    });
+
+    it('pins re-resolve after lines are inserted above them, and go stale when removed', async () => {
+      const text = textOf(rel);
+      const speed = (await cursor(text, '#iUniform float u_speed', '#iUniform float u_'.length)).cursor!;
+      const lit = (await cursor(text, 'rotate2d(-t * 0.25)', 'rotate2d(-t * 0.2'.length)).cursor!;
+      const anchors = [speed.anchor, lit.anchor];
+
+      const shifted = '// one\n// two\n// three\n' + text;
+      sync(shifted);
+      const r = await conn.sendRequest<ValueTargetsResult>(VALUE_TARGETS_REQUEST, { uri: uriOf(rel), anchors });
+      expect(r.anchors).toHaveLength(2);
+      expect(r.anchors![0].match).toBe('declaration');
+      expect(r.anchors![0].target?.range.start.line).toBe(speed.range.start.line + 3);
+      expect(r.anchors![0].anchor.line).toBe(speed.anchor.line + 3);
+      expect(r.anchors![1].match).not.toBe('none');
+      expect(r.anchors![1].target?.components[0].value).toBe(0.25);
+      expect(r.anchors![1].target?.range.start.line).toBe(lit.range.start.line + 3);
+
+      // Remove the uniform line entirely: that pin is stale, the other still resolves.
+      const removed = text.replace(/^#iUniform float u_speed.*\r?\n/m, '');
+      sync(removed);
+      const r2 = await conn.sendRequest<ValueTargetsResult>(VALUE_TARGETS_REQUEST, { uri: uriOf(rel), anchors });
+      expect(r2.anchors![0].match).toBe('none');
+      expect(r2.anchors![0].target).toBeNull();
+      expect(r2.anchors![1].target?.components[0].value).toBe(0.25);
+
+      sync(text);
+    });
+
+    it('unknown documents answer null instead of failing', async () => {
+      const r = await conn.sendRequest<ValueTargetsResult>(VALUE_TARGETS_REQUEST, {
+        uri: uriOf('__does_not_exist__.glsl'),
+        position: { line: 0, character: 0 },
+      });
+      expect(r.cursor).toBeNull();
+    });
+  });
 });

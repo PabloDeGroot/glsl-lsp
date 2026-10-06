@@ -6,7 +6,9 @@ Shadertoy-style shaders and for large include-based libraries such as
 files too.
 
 It ships as one extension: a small client (`dist/client.js`) that starts the
-bundled language server (`dist/server.js`). There is no runtime dependency
+bundled language server (`dist/server.js`), plus the **Values** side panel
+(`dist/webview.js`/`.css`) with sliders and color/vector pickers for the
+numbers in your shader. There is no runtime dependency
 except an optional `glslangValidator` on `PATH`.
 
 ## Features
@@ -132,6 +134,90 @@ Diagnostics come in two layers:
    - Library files without `main`/`mainImage` are checked through the shaders
      that include them.
 
+### Values panel: sliders, color and vector pickers
+
+The **GLSL** icon in the Activity Bar opens the **Values** panel: interactive
+widgets for the numbers in your shader, in the spirit of
+[glslEditor](https://github.com/patriciogonzalezvivo/glslEditor). Dragging a
+widget rewrites the literal in the document live (about 30 times a second),
+so the shader-toy preview updates as you drag. Each drag is **one undo step**.
+
+The panel has two parts.
+
+**1. The values list**
+
+- **Cursor** (always the first row): the value under or nearest the editor
+  cursor, such as a float literal, a `vec2/vec3/vec4` constructor, an
+  `#iUniform` default, a `#define` or an iq cosine palette. It follows the
+  cursor as you move.
+- **Pinned**: values you keep at hand while you edit elsewhere. Each row shows
+  a name (variable, uniform or a short code snippet), the file when it is not
+  the active one, and a live preview: color swatch, numbers or a small arrow.
+  - **Pin**: click the pin button on the cursor row, run **GLSL: Pin Value at
+    Cursor** (also in the editor right-click menu and the panel title bar), or
+    press `P` in the list.
+  - **Unpin**: the × on the row, `Delete` in the list, or **GLSL: Unpin All
+    Values** from the panel title bar.
+  - Pins are saved per workspace and found again by declaration name
+    (`#iUniform u_speed`, `const float K`, a local `col`), otherwise by the
+    shape of the line. They survive edits above them and value changes. A pin
+    whose value was deleted shows *not found* instead of jumping to another
+    value.
+  - A pin in another file keeps working: dragging edits that file even when it
+    is not open in an editor.
+- Drag a number sideways in the list to scrub it; double-click it to type.
+  Lines with several numbers and palettes expand into one sub-row per value.
+
+**2. The widget** for the selected row. It is the cursor row unless you click
+a pin; a selected pin stays selected while the cursor moves. Click the cursor
+row, **← Back to cursor** or press `Escape` to go back.
+
+| Value | Widget |
+| --- | --- |
+| `float` | Slider and number field. The range comes from `#iUniform ... in { min, max }`, otherwise an automatic range around the value that you can edit. Shift drags finely; double-click resets. |
+| `vec2` | 2D trackpad with grid and axes, editable range, X/Y fields. Shift is fine, Ctrl snaps, Ctrl+wheel zooms. |
+| `vec3`/`vec4` color | Saturation/brightness square, hue strip, alpha strip for `vec4`, hex and RGB(A) fields, intensity slider for HDR values above 1. Used for `#iUniform color3`, names like `col`/`tint`/`rgb` and the existing color heuristic. |
+| `vec3`/`vec4` direction | Trackball: drag to rotate the vector, with *Keep length* or *Normalize*. Shift snaps to 15°, Ctrl to axes. |
+| Several numbers on a line | One slider per number. |
+| iq palette `palette(t, a, b, c, d)` or `a + b*cos(6.28318*(c*t+d))` | Gradient strip, r/g/b curves, a/b/c/d rows and presets. |
+
+A **Color | Vector** toggle switches a `vec3`/`vec4` between the two widgets.
+Non-literal components (`vec3(t, 0.5, 1.0)`) show as locked. Floats always
+keep a `.` (`2.0`), trailing zeros are trimmed, and the precision follows the
+widget step (at most `glslLsp.values.maxDecimals`). If you type in the same
+spot while dragging, the drag stops instead of overwriting your edit.
+
+Keyboard in the panel: `↑`/`↓` move through rows, `→`/`←` expand and
+collapse, `Enter` reveals the value in the editor, `P` pins or unpins,
+`Delete` unpins, `Alt+↑`/`Alt+↓` reorder pins, `Escape` goes back to the
+cursor. Arrow keys adjust a focused slider or trackpad (several presses in a
+row are one undo step).
+
+**Nudge the number under the cursor** without the panel:
+
+| Command | Keybinding (GLSL editors) |
+| --- | --- |
+| GLSL: Increment Number at Cursor | `Ctrl+Alt+Up` |
+| GLSL: Decrement Number at Cursor | `Ctrl+Alt+Down` |
+| GLSL: Increment Number at Cursor (x10) | `Ctrl+Shift+Alt+Up` |
+| GLSL: Decrement Number at Cursor (x10) | `Ctrl+Shift+Alt+Down` |
+
+The step is the literal's last decimal place (`0.25` steps by `0.01`, `3` by
+`1`), and it works with multiple cursors.
+
+> On Windows, `Ctrl+Alt+Up/Down` is VS Code's *Add Cursor Above/Below*; on
+> Windows and Linux `Ctrl+Shift+Alt+Up/Down` is column selection. In a GLSL
+> editor the keys nudge only when the cursor is on a number (with several
+> cursors: when every cursor is on a number); otherwise they fall back to
+> the platform's default command, so adding cursors keeps working.
+> To use other keys, rebind `glslLsp.nudgeUp`/`glslLsp.nudgeDown` in
+> **Keyboard Shortcuts** (Ctrl+K Ctrl+S). (Some Windows graphics drivers
+> grab `Ctrl+Alt+Arrow` to rotate the screen before VS Code sees it.)
+
+**GLSL: Pin Value at Cursor** reveals the panel if it has been opened before.
+If it has never been opened, the value is pinned anyway and the status bar
+says so; open the **GLSL** view to see it.
+
 ## Settings
 
 | Setting | Default | Description |
@@ -149,10 +235,15 @@ Diagnostics come in two layers:
 | `glslLsp.shadertoy.enable` | `true` | Shadertoy uniforms, `mainImage` and the shader-toy directives. |
 | `glslLsp.index.exclude` | `["node_modules", ".git", "out", "dist", ".vscode-test"]` | Folders skipped when indexing. A bare name matches anywhere; an entry containing `/` (e.g. `glsl-lsp/test/fixtures`) matches a path relative to the workspace folder. Changing it re-indexes. Files in skipped folders are still loaded when something includes them. |
 | `glslLsp.index.maxFiles` | `10000` | Maximum number of indexed files per workspace folder. |
+| `glslLsp.values.throttleMs` | `33` | Minimum milliseconds between document edits while dragging a Values widget (33 ms is about 30 per second). Raise it if the live preview stutters. |
+| `glslLsp.values.maxDecimals` | `4` | Maximum decimals written by the Values panel. Trailing zeros are trimmed. A literal that already has more decimals keeps its precision, and a value too small for the limit is written with an exponent (`1e-5`) rather than rounded to `0.0`. |
+| `glslLsp.values.followCursor` | `true` | Update the Values panel's cursor row as the cursor moves. When off, it updates when you switch editors or run **GLSL: Focus Values Panel**. |
 | `glslLsp.trace.server` | `off` | Trace LSP traffic in the output channel. |
 
 Commands: **GLSL: Restart Language Server**, **GLSL: Show Language Server
-Output**, **GLSL: Re-index Workspace**.
+Output**, **GLSL: Re-index Workspace**, **GLSL: Pin Value at Cursor**,
+**GLSL: Unpin All Values**, **GLSL: Focus Values Panel** and the four nudge
+commands (see [Values panel](#values-panel-sliders-color-and-vector-pickers)).
 
 > A folder that contains a file named `.glsl-lsp-ignore` is never indexed.
 > This repository's `test/fixtures/` has one, so its fixtures do not show up as
@@ -187,7 +278,7 @@ From source:
 ```sh
 npm install
 npm run package                      # builds (minified) and writes glsl-lsp-<version>.vsix
-code --install-extension glsl-lsp-0.1.0.vsix
+code --install-extension glsl-lsp-0.2.0.vsix
 ```
 
 `glslangValidator` is optional. Install it from the Vulkan SDK or MSYS2's
@@ -206,6 +297,14 @@ npm run test:e2e     # just the end-to-end test: spawns dist/server.js over stdi
 Press F5 in VS Code (**Run Extension**) to start an Extension Development
 Host on the parent folder. Use the **Extension + Server** compound
 configuration to also attach a debugger to the server (port 6009).
+
+The Values panel UI can be checked without VS Code: run `npm run build`, then
+open `webview/dev/harness.html?theme=dark&scene=color` in a browser (themes
+`dark`, `light`, `hc`; scenes `color`, `float`, `vec2`, `vector`, `vec4`,
+`palette`, `multi`, `stale`, `empty`, `noEditor`, `hdr`, `locked`,
+`childColor`; `&w=320` sets the width, `&selftest=1` runs a scripted check of
+the messages it sends). The harness fakes the VS Code API and is not shipped.
+The panel's full design is in [docs/VALUES.md](docs/VALUES.md).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module map, the data model and
 a step-by-step guide to adding a feature.

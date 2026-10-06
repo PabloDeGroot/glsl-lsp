@@ -164,7 +164,7 @@ export function contextNames(model: FileModel, pos: number): string[] {
   return names;
 }
 
-function plausiblyColor(model: FileModel, start: number): boolean {
+export function plausiblyColor(model: FileModel, start: number): boolean {
   const names = contextNames(model, start);
   if (names.some((n) => GEOMETRIC_CALLEES.has(n))) return false;
   // Assigned to a float (`float diffuse = ...`): the vector is an operand, not the color.
