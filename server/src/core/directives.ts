@@ -127,6 +127,7 @@ export function scanDirectives(uri: string, tokens: readonly Token[], lines: Lin
             path: m[2],
             pathRange: lines.range(pathStart, pathStart + m[2].length),
             range: directive.range,
+            ...(m[1] === '<' ? { angle: true } : {}),
           });
         }
         break;
@@ -248,9 +249,14 @@ function parseIUniform(uri: string, args: string, base: number, lines: LineIndex
   const nameStart = base + m[0].length - name.length;
   const info: IUniformInfo = { declaredType };
   const rest = args.slice(m[0].length);
-  const def = /^\s*=\s*(.*?)(?=\s+in\s*\{|\s+step\b|$)/.exec(rest);
-  if (def) info.defaultValue = def[1].trim();
-  const range = /\bin\s*\{\s*([^,}]*)\s*,\s*([^}]*)\}/.exec(rest);
+  // Cut at ` in {` / ` step` with a single-whitespace search: a lazy `(.*?)` before `\s+in` is quadratic on long lines.
+  const eq = /^\s*=/.exec(rest);
+  if (eq) {
+    const cut = rest.search(/\s(?:in\s*\{|step\b)/);
+    info.defaultValue = rest.slice(eq[0].length, cut > eq[0].length ? cut : undefined).trim();
+  }
+  // No `\s*` next to the groups: they match spaces too, and the ambiguity backtracks cubically on a long unclosed `in {`.
+  const range = /\bin\s*\{([^,}]*),([^}]*)\}/.exec(rest);
   if (range) {
     info.min = range[1].trim();
     info.max = range[2].trim();

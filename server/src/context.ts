@@ -34,8 +34,8 @@ export interface ServerContext {
   /**
    * Fires after what the shader environment provides changed: the
    * glslLsp.environment / glslLsp.shadertoy settings ('settings'), or the
-   * client reported the shader-toy extension being installed or removed
-   * ('client'). Results that depend on builtins (semantic tokens,
+   * client reported the shader-toy extension being installed or removed, or
+   * the workspace being trusted ('client'). Results that depend on builtins (semantic tokens,
    * diagnostics) should be refreshed.
    */
   onEnvironmentChanged(listener: (reason: 'settings' | 'client') => void): { dispose(): void };
@@ -43,6 +43,8 @@ export interface ServerContext {
   onIndexed(listener: () => void): { dispose(): void };
   /** True once the initial workspace index is complete. */
   readonly indexed: boolean;
+  /** False in VS Code's Restricted Mode: nothing from the workspace may be run. */
+  readonly workspaceTrusted: boolean;
   /** Client capability flags features may need. */
   clientCapabilities: {
     snippetSupport: boolean;

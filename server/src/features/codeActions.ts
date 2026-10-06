@@ -114,7 +114,7 @@ export function fixIncludePathActions(ws: Workspace, model: FileModel, params: C
   hits.sort((a, b) => a.split('/').length - b.split('/').length || a.length - b.length);
   const diagnostics = params.context.diagnostics.filter((d) => rangeContains(inc.range, d.range.start));
   return hits.slice(0, MAX_ACTIONS_PER_NAME).map((path, i) => ({
-    title: `Change to "${path}"`,
+    title: inc.angle ? `Change to <${path}>` : `Change to "${path}"`,
     kind: CodeActionKind.QuickFix,
     isPreferred: i === 0 && hits.length === 1,
     diagnostics: diagnostics.length ? diagnostics : undefined,

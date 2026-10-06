@@ -16,6 +16,8 @@ export interface FastOptions {
   undeclared?: boolean;
   /** Upper bound of undeclared-identifier reports per file. */
   maxUndeclared?: number;
+  /** Do not report unresolved `#include <...>` (the runtime provides them, e.g. three.js chunks). */
+  ignoreAngleIncludes?: boolean;
 }
 
 export function computeFastDiagnostics(ws: Workspace, uriIn: string, options: FastOptions = {}): Diagnostic[] {
@@ -30,24 +32,28 @@ export function computeFastDiagnostics(ws: Workspace, uriIn: string, options: Fa
       // a check must never break the others
     }
   };
-  safe(() => checkIncludes(ws, model, out));
+  safe(() => checkIncludes(ws, model, out, options.ignoreAngleIncludes === true));
   safe(() => checkSyntax(model, out));
   safe(() => checkDuplicates(ws, model, out));
-  if (options.undeclared !== false) safe(() => checkUndeclared(ws, model, out, options.maxUndeclared ?? 200));
+  // Runtime-supplied `#include <chunk>`s (three.js) define names no file here declares: undeclared reports would be noise.
+  const runtimeChunks = options.ignoreAngleIncludes === true && model.includes.some((i) => i.angle && !i.resolvedUri);
+  if (options.undeclared !== false && !runtimeChunks) safe(() => checkUndeclared(ws, model, out, options.maxUndeclared ?? 200));
   return out;
 }
 
 // ---------------------------------------------------------------- includes
 
-function checkIncludes(ws: Workspace, model: FileModel, out: Diagnostic[]) {
+function checkIncludes(ws: Workspace, model: FileModel, out: Diagnostic[], ignoreAngle: boolean) {
   for (const inc of model.includes) {
     if (!inc.resolvedUri) {
+      if (inc.angle && ignoreAngle) continue;
+      // `<...>` usually names a file the engine or framework supplies at runtime: a warning, not an error.
       out.push({
         range: inc.pathRange,
-        severity: DiagnosticSeverity.Error,
+        severity: inc.angle ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
         source: SOURCE,
         code: 'unresolved-include',
-        message: `Cannot resolve #include "${inc.path}".`,
+        message: inc.angle ? `Cannot resolve #include <${inc.path}>.` : `Cannot resolve #include "${inc.path}".`,
         data: { path: inc.path },
       });
       continue;

@@ -25,7 +25,7 @@ describe('settings', () => {
     const store = new SettingsStore();
     store.update({ diagnostics: { glslang: { path: 'C:/bin/glslangValidator.exe' }, onType: 'yes' }, includePaths: ['lib'] });
     const s = store.get();
-    expect(s.diagnostics.glslang).toEqual({ enable: true, path: 'C:/bin/glslangValidator.exe' });
+    expect(s.diagnostics.glslang).toEqual({ enable: true, path: 'C:/bin/glslangValidator.exe', targetEnv: 'auto' });
     expect(s.diagnostics.onType).toBe(true);
     expect(s.includePaths).toEqual(['lib']);
   });
@@ -85,7 +85,7 @@ describe('settings', () => {
     ]);
     expect(env.defines).toEqual({ MY_RUNTIME: '', MAX_LIGHTS: '8', COUNT: '4' });
     store.update({});
-    expect(store.get().environment).toEqual({ uniforms: [], defines: {} });
+    expect(store.get().environment).toEqual({ uniforms: [], defines: {}, presets: [] });
   });
 
   it('notifies listeners with the previous value', () => {

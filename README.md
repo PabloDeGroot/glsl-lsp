@@ -1,479 +1,218 @@
 # GLSL Language Server
 
-A modern language server and VS Code extension for GLSL: plain `.vert` /
-`.frag` / `.comp` shaders, large include-based libraries such as
-[LYGIA](https://lygia.xyz), and, optionally, Shadertoy-style shaders. Uniforms
-and macros your own runtime provides can be declared in the settings so they
-behave like builtins (see [Environment](#environment)).
+**Smart GLSL editing for VS Code: completion that writes your `#include`s, hover docs from your own comments, real compiler errors, and live sliders and color pickers for the numbers in your shaders.**
 
-It ships as one extension: a small client (`dist/client.js`) that starts the
-bundled language server (`dist/server.js`), plus the **Values** side panel
-(`dist/webview.js`/`.css`) with sliders and color/vector pickers for the
-numbers in your shader. There is no runtime dependency
-except an optional `glslangValidator` on `PATH`.
+[![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version-short/pablodegroot.glsl-lsp.svg)](https://marketplace.visualstudio.com/items?itemName=pablodegroot.glsl-lsp) [![License](https://img.shields.io/github/license/PabloDeGroot/glsl-lsp)](LICENSE)
+
+<!-- TODO(owner): record images/hero.gif (drag a Values widget while a live shader preview updates)
+     and make it the hero image here. Move autoinclude.gif down to the "Completion" feature below. -->
+
+<img src="images/autoinclude.gif" width="667" alt="Typing snoi in a GLSL fragment shader lists LYGIA's snoise functions with their file paths; accepting one inserts the matching #include line at the top of the file">
+
+A language server for every kind of GLSL: OpenGL, Vulkan, WebGL and three.js, include-based libraries such as [LYGIA](https://lygia.xyz), Shadertoy, or your own engine.
+It works out of the box. `glslangValidator` is optional and adds full compiler errors.
+
+**Works with** desktop GLSL up to 4.60 · Vulkan GLSL · GLSL ES 1.00 / 3.00 (WebGL 1 / 2) · three.js · LYGIA and other `#include` libraries · Shadertoy · your own engine's uniforms
 
 ## Features
 
-### Hover with your doc comments
+### Hover docs from your own comments
 
-Hovering a function, struct, macro, uniform, variable or `#include` path
-shows every overload's signature, its documentation rendered as Markdown,
-and where it is defined. Two doc styles are understood:
+Hover a function, struct, macro or uniform to see every overload, its documentation and where it is defined. Plain `//` and `/* */` comments above a declaration are used as docs, and so are LYGIA's YAML headers. The builtins (about 180 function families and the `gl_*` variables) have docs, with a link to the Khronos reference.
 
-```glsl
-// Centered and aspect corrected: y spans [-1, 1], x spans [-aspect, aspect].
-// This is the coordinate space you want for almost everything.
-vec2 uvCentered(vec2 fragCoord, vec2 res) { ... }
-```
+<img src="images/hover.png" width="900" alt="Hover on LYGIA's boxSDF showing both overloads, the description, a usage block, contributors and the file it is defined in">
 
-```glsl
-/*
-contributors: Patricio Gonzalez Vivo
-description: Gradient Noise
-use: gnoise(<float> x)
-options:
-  - GNOISE_NOISE_FNC: ...
-*/
-#ifndef FNC_GNOISE
-#define FNC_GNOISE
-float gnoise(float x) { ... }
-```
+### Completion that writes the `#include`
 
-- **`//` and `/* */` comments** directly above a declaration (a blank line
-  breaks the link). A trailing `// comment` documents variables, fields,
-  parameters, `#define`s and `#iUniform`s.
-- **LYGIA YAML blocks** apply to every function in the file. They are shown as
-  the description, a *Usage* code block, *Options* and *Examples*. An option
-  macro such as `GNOISE_NOISE_FNC` shows its own line from `options:`.
-- **Builtins** (about 180 GLSL function families with every overload, `gl_*`
-  variables, types, qualifiers and the Shadertoy uniforms) have docs and a
-  link to the Khronos reference page.
-- If a symbol exists in the workspace but is **not included** in the current
-  file, the hover says which `#include` would bring it in.
+Pick a function from a file you have not included yet, and the `#include` line is added for you, with a path relative to the current file (see the animation above). Completion also covers locals, struct fields, swizzles, preprocessor directives and `#include` paths.
 
-### Completion with automatic `#include`
+More: [docs/features.md](docs/features.md)
 
-Start typing a function name (or press Ctrl+Space) and pick it from the list.
-If it lives in a file that the current shader does not include yet (directly
-or through other includes), the matching line is added for you:
+### Signature help and inlay hints
 
-```glsl
-#include "lib/sdf.glsl"
-#include "lygia/generative/voronoi.glsl"   // <- inserted when you accept `voronoi`
+Every overload with the active parameter highlighted, including `vecN`/`matN` constructors and function-like macros. Parameter names appear inline next to literal arguments.
 
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec3 v = voronoi(uv * 4.0, iTime);
-```
+<img src="images/signature.png" width="900" alt="Signature help for smoothstep showing overload 2 of 4 with the active parameter highlighted, and edge0 and edge1 inlay hints">
 
-- The path is written relative to the current file. It uses `<...>` when
-  every existing include does, and it keeps CRLF line endings.
-- The new line goes after the last top-level `#include` (not one inside an
-  `#if` block or below code). With no includes yet, it goes after `#version` /
-  `#extension` / `#iChannel` lines, an include guard, option `#define`s
-  (LYGIA options must come before the library's include) and `#ifndef X` /
-  `#define X 4` / `#endif` defaults, and a header comment that is followed by a
-  blank line. A comment directly above the first declaration is its doc
-  comment and stays attached to it.
-- With an empty prefix (Ctrl+Space) up to 300 not-yet-included functions and
-  structs are listed: files in a `lib/` folder (if you have one) first, then
-  LYGIA's generative, math, color, sdf, draw and space folders, then shorter
-  paths; test and fixture folders last. Typing narrows the full set.
-- If one of your own library files already includes the defining LYGIA file
-  (for example a `lib/noise.glsl` that includes LYGIA's file defining `gnoise`), that library is offered
-  first. Another shader's multipass `common.glsl` (only included by the shaders
-  next to it) is never offered as such a library.
-- Nothing is offered where you are naming a new variable, parameter or field
-  (`float gno|`).
-- Nothing is offered when the symbol is already reachable, for shader entry
-  points (files with `mainImage`/`main`), for files that include the current
-  one (that would be a cycle), or for LYGIA option macros.
+### Navigate and refactor across includes
 
-The rest of completion is context aware:
+Go to definition follows `#include`s into your own files and into libraries such as LYGIA. Find references and rename are scope-aware and work across files. Rename never edits read-only library folders (LYGIA by default) and says why. Ctrl+T searches every function, struct and macro in the workspace.
 
-- **Identifiers:** locals in scope, then this file, then included files, then
-  builtins, then keywords.
-- **Members after `.`:** swizzles limited to the vector size (`xyzw`, `rgba`,
-  `stpq`), struct fields, and `length()` on arrays.
-- **Preprocessor:** directive snippets after `#`, file and folder paths
-  inside `#include "`, macro names after `#ifdef`, `#version` profiles and
-  `#extension` names.
-- **Functions** insert `name($0)` and open signature help.
+### Diagnostics and quick fixes
 
-### Everything else
+Fast checks run as you type: syntax errors, unresolved `#include`s, duplicate definitions and undeclared names. A name that lives in a file you have not included gets an *Add #include* quick fix.
 
-| Feature | What it does |
-| --- | --- |
-| **Signature help** | Every overload, with the active parameter, per-parameter docs, struct and `vecN`/`matN` constructors, and function-like macros. The best overload is picked by argument count and types. |
-| **Inlay hints** | Parameter names on literal arguments, e.g. `smoothstep(edge0: 0.2, edge1: 0.8, d)`. |
-| **Go to definition / declaration / type definition** | Into included files and libraries such as LYGIA. The overload is picked by argument count and types. Ctrl+click on an `#include` path opens the file. |
-| **References, document highlight, rename** | Scope-aware (locals never leak, `float d = d * 2.0;` reads the outer `d`) and across included files, including overloads split between a library and its includer. Rename refuses builtins, keywords, reserved words (`class`, `input`, `gl_*`, `a__b`) and symbols declared in read-only folders (`glslLsp.rename.readOnlyPaths`, LYGIA by default), and says why. |
-| **Document / workspace symbols** | Outline with struct fields; fuzzy workspace search (Ctrl+T) over every function, struct and macro. |
-| **Diagnostics** | See the next section. |
-| **Code actions** | *Add `#include "..."`* for an undeclared name. *Change to `"..."`* for an include that can't be found. *Remove unused / redundant `#include`*. |
-| **Semantic highlighting** | Functions, parameters, globals, uniforms (readonly), struct fields, macros and builtins (`defaultLibrary`). |
-| **Folding and smart selection** | Braces, `#if`/`#else` branches, comment blocks, include runs and `// region` markers. Expand-selection steps out from word to argument, call, statement, block and function. |
-| **Color picker** | On `vec3(1.0, 0.5, 0.2)` style literals that are clearly colors, `#define` color constants and `#iUniform color3` defaults. |
-| **Formatting** | Format document / selection / on type. Conservative by default: indentation and whitespace only, hand-aligned code untouched. See [Formatting](#formatting). |
-| **Syntax highlighting** | TextMate grammar with shader-toy directives, LYGIA doc keys and macro constants. Enter continues `//` and `/** */` comments. |
+<img src="images/quickfix.png" width="900" alt="snoise(uv) underlined as undeclared, with the quick fix Add #include ../lygia/generative/snoise.glsl">
 
-### Diagnostics
+With `glslangValidator` installed, complete shaders (a `main()` and a `#version` line) also get the compiler's own errors. Includes are inlined, and errors inside an included file are reported on that file.
 
-Diagnostics come in two layers:
+<img src="images/diagnostics.png" width="900" alt="The Problems panel listing two glslang compiler errors for a line that assigns a vec3 expression to a float">
 
-1. **Fast checks** run in process on every edit:
-   - unresolved `#include`s and include cycles;
-   - syntax errors;
-   - duplicate definitions;
-   - undeclared identifiers. A name declared in a workspace file you don't
-     include is an error with an *Add #include* quick fix. Other unknown names
-     are warnings.
-2. **`glslangValidator`** runs when a shader is opened or saved, and while you
-   type (debounced) when `diagnostics.onType` is on.
-   - Shadertoy-style files (where [Shadertoy support](#shadertoy-integration-optional)
-     applies) are wrapped in the shader-toy extension's WebGL2 preamble
-     (uniforms, `iChannel0-3` with their `#iChannel` types, `#iKeyboard`
-     helpers, `#iUniform`s) and a generated `main()`.
-   - The [environment](#environment) uniforms and defines are declared too:
-     after the Shadertoy preamble, or right after `#version` in plain GLSL.
-   - Includes are inlined. Errors inside an included file are reported on that
-     file, plus a summary on the `#include` line.
-   - Library files without `main`/`mainImage` are checked through the shaders
-     that include them.
+More: [docs/diagnostics.md](docs/diagnostics.md)
 
-### Values panel: sliders, color and vector pickers
+### Values panel: sliders, color, vector and palette pickers
 
-The **GLSL** icon in the Activity Bar opens the **Values** panel: interactive
-widgets for the numbers in your shader, in the spirit of
-[glslEditor](https://github.com/patriciogonzalezvivo/glslEditor). Dragging a
-widget rewrites the literal in the document live (about 30 times a second),
-so a live preview (such as shader-toy's) updates as you drag. Each drag is
-**one undo step**.
+Click the **GLSL** icon in the Activity Bar to open the **Values** panel. Put the cursor on a number, vector or color and drag: the literal in your code is rewritten live, so a preview that follows the editor updates as you drag. The file is not saved, so a preview that watches the file on disk needs auto-save. Each drag is one undo step.
 
-The panel has two parts.
+<img src="images/values-color.png" width="900" alt="The Values panel next to the editor, editing vec3 tint = vec3(1.0, 0.55, 0.2) with a color picker: saturation square, hue strip, hex field and R, G, B fields">
 
-**1. The values list**
+<img src="images/values-widgets.png" width="900" alt="Five Values panel widgets: color picker, float slider, direction trackball, vec2 trackpad and cosine palette editor">
 
-- **Cursor** (always the first row): the value under or nearest the editor
-  cursor, such as a float literal, a `vec2/vec3/vec4` constructor, an
-  `#iUniform` default, a `#define` or an iq cosine palette. It follows the
-  cursor as you move.
-- **Pinned**: values you keep at hand while you edit elsewhere. Each row shows
-  a name (variable, uniform or a short code snippet), the file when it is not
-  the active one, and a live preview: color swatch, numbers or a small arrow.
-  - **Pin**: click the pin button on the cursor row, run **GLSL: Pin Value at
-    Cursor** (also in the editor right-click menu and the panel title bar), or
-    press `P` in the list.
-  - **Unpin**: the × on the row, `Delete` in the list, or **GLSL: Unpin All
-    Values** from the panel title bar.
-  - Pins are saved per workspace and found again by declaration name
-    (`#iUniform u_speed`, `const float K`, a local `col`), otherwise by the
-    shape of the line. They survive edits above them and value changes. A pin
-    whose value was deleted shows *not found* instead of jumping to another
-    value.
-  - A pin in another file keeps working: dragging edits that file even when it
-    is not open in an editor.
-- Drag a number sideways in the list to scrub it; double-click it to type.
-  Lines with several numbers and palettes expand into one sub-row per value.
+- **float**: slider with an editable range
+- **vec2**: 2D trackpad
+- **vec3 / vec4 colors**: color picker, with alpha and an intensity slider for HDR values
+- **directions**: a trackball that rotates the vector
+- **cosine palettes** (`a + b*cos(6.28318*(c*t+d))`): gradient, curves and presets
 
-**2. The widget** for the selected row. It is the cursor row unless you click
-a pin; a selected pin stays selected while the cursor moves. Click the cursor
-row, **← Back to cursor** or press `Escape` to go back.
+Pin the values you tune most and keep them at hand while you edit elsewhere. Without the panel, Ctrl+Alt+Up/Down nudges the number under the cursor.
 
-| Value | Widget |
-| --- | --- |
-| `float` | Slider and number field. The range comes from `#iUniform ... in { min, max }`, otherwise an automatic range around the value that you can edit. Shift drags finely; double-click resets. |
-| `vec2` | 2D trackpad with grid and axes, editable range, X/Y fields. Shift is fine, Ctrl snaps, Ctrl+wheel zooms. |
-| `vec3`/`vec4` color | Saturation/brightness square, hue strip, alpha strip for `vec4`, hex and RGB(A) fields, intensity slider for HDR values above 1. Used for `#iUniform color3`, names like `col`/`tint`/`rgb` and the existing color heuristic. |
-| `vec3`/`vec4` direction | Trackball: drag to rotate the vector, with *Keep length* or *Normalize*. Shift snaps to 15°, Ctrl to axes. |
-| Several numbers on a line | One slider per number. |
-| iq palette `palette(t, a, b, c, d)` or `a + b*cos(6.28318*(c*t+d))` | Gradient strip, r/g/b curves, a/b/c/d rows and presets. |
+More: [docs/values-panel.md](docs/values-panel.md)
 
-A **Color | Vector** toggle switches a `vec3`/`vec4` between the two widgets.
-Non-literal components (`vec3(t, 0.5, 1.0)`) show as locked. Floats always
-keep a `.` (`2.0`), trailing zeros are trimmed, and the precision follows the
-widget step (at most `glslLsp.values.maxDecimals`). If you type in the same
-spot while dragging, the drag stops instead of overwriting your edit.
+### A formatter that respects your alignment
 
-Keyboard in the panel: `↑`/`↓` move through rows, `→`/`←` expand and
-collapse, `Enter` reveals the value in the editor, `P` pins or unpins,
-`Delete` unpins, `Alt+↑`/`Alt+↓` reorder pins, `Escape` goes back to the
-cursor. Arrow keys adjust a focused slider or trackpad (several presses in a
-row are one undo step).
+The default mode only fixes indentation and whitespace, so it is safe to run on save over hand-tuned shader code: aligned columns and trailing comments stay where you put them. An opinionated mode, shown below, also spaces operators and can place braces.
 
-**Nudge the number under the cursor** without the panel:
+<img src="images/format.png" width="900" alt="Before and after Format Document in opinionated mode: a cramped fragment shader gets indentation and spaces around operators">
 
-| Command | Keybinding (GLSL editors) |
-| --- | --- |
-| GLSL: Increment Number at Cursor | `Ctrl+Alt+Up` |
-| GLSL: Decrement Number at Cursor | `Ctrl+Alt+Down` |
-| GLSL: Increment Number at Cursor (x10) | `Ctrl+Shift+Alt+Up` |
-| GLSL: Decrement Number at Cursor (x10) | `Ctrl+Shift+Alt+Down` |
+More: [docs/formatting.md](docs/formatting.md)
 
-The step is the literal's last decimal place (`0.25` steps by `0.01`, `3` by
-`1`), and it works with multiple cursors.
+### Also
 
-> On Windows, `Ctrl+Alt+Up/Down` is VS Code's *Add Cursor Above/Below*; on
-> Windows and Linux `Ctrl+Shift+Alt+Up/Down` is column selection. In a GLSL
-> editor the keys nudge only when the cursor is on a number (with several
-> cursors: when every cursor is on a number); otherwise they fall back to
-> the platform's default command, so adding cursors keeps working.
-> To use other keys, rebind `glslLsp.nudgeUp`/`glslLsp.nudgeDown` in
-> **Keyboard Shortcuts** (Ctrl+K Ctrl+S). (Some Windows graphics drivers
-> grab `Ctrl+Alt+Arrow` to rotate the screen before VS Code sees it.)
+- Semantic highlighting for functions, parameters, uniforms, macros and builtins
+- Outline with struct fields, and folding by braces, `#if` branches and `// region` markers
+- Smart selection that expands from word to argument, call, statement and block
+- Color swatches and the VS Code color picker on color literals
+- Code actions to remove unused or redundant `#include`s and fix include paths
 
-**GLSL: Pin Value at Cursor** reveals the panel if it has been opened before.
-If it has never been opened, the value is pinned anyway and the status bar
-says so; open the **GLSL** view to see it.
+Shortcuts are written for Windows and Linux. On macOS, read Ctrl as Cmd (the nudge keys are Ctrl+Option+Up/Down).
 
-### Formatting
+## Quick start
 
-**Format Document**, **Format Selection** and format on type
-(`editor.formatOnType`: after `}`, `;` and Enter, re-indenting only the
-current line). The default mode is deliberately gentle, so it can run on
-save over hand-tuned shader code:
+1. Install **GLSL Language Server** from the Extensions view, or run `ext install pablodegroot.glsl-lsp` in Quick Open (Ctrl+P).
+2. Open a `.glsl`, `.vert`, `.frag`, `.comp`, `.geom`, `.tesc`, `.tese`, `.vsh` or `.fsh` file ([and a few more](docs/configuration.md#file-extensions)). That's it.
+3. *Optional:* install `glslangValidator` for full compiler errors.
 
-| `glslLsp.format.mode` | Changes |
-| --- | --- |
-| `conservative` (default) | Indentation by brace and parenthesis depth, trailing whitespace, runs of blank lines (`maxBlankLines`), the final newline, a missing space after `,` and `;` (not inside `for (;;)` or before `}`) and around `=` / `+=` / ... Nothing else: hand-aligned columns, `float a    = 1.0;` padding and aligned trailing comments stay exactly as they are. |
-| `opinionated` | Everything above, plus: spaces around binary operators (not unary `-x`, `1e-3` or `++`/`--`: `a++ + b`), one space after `if`/`for`/`while`/`switch`/`return`, no space before a call's `(` or inside `( )` / `[ ]`, no space before `,` / `;`, one space before `{`, one-line blocks padded (`{ x(); }`), un-braced bodies indented one level, and brace placement per `braceStyle`. |
-| `off` | Format requests return no edits (use another formatter). |
+   | System | Command |
+   | --- | --- |
+   | Debian / Ubuntu | `sudo apt install glslang-tools` |
+   | Arch | `sudo pacman -S glslang` |
+   | Fedora | `sudo dnf install glslang` |
+   | macOS | `brew install glslang` |
+   | Windows | the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home), or MSYS2 `pacman -S mingw-w64-x86_64-glslang` |
 
-Indentation details (both modes):
+   If it is not on your `PATH`, set `glslLsp.diagnostics.glslang.path`.
+4. *Optional:* `#include` looks in the including file's folder and then in the workspace folder roots, so `#include "lygia/..."` works without setup. For libraries elsewhere, add their folder to `glslLsp.includePaths` (searched before the workspace roots). See [Includes](docs/configuration.md#includes).
 
-- Continuation lines of a multi-line expression or argument list get at
-  least one extra level; deeper hand alignment is kept and moves with the
-  statement:
+The server is plain TypeScript bundled with the extension. There is no native binary, so it runs on Windows, macOS and Linux on any CPU, locally or over Remote.
 
-  ```glsl
-  vec3 c = mix(a,          // stays aligned under `a`
-               b, t);
-  ```
+## Use it with your engine or framework
 
-- Bodies of `if`/`for`/`while`/`else`/`do` without braces: opinionated mode
-  indents them one level; conservative mode keeps them at least at the
-  header's level, so stacked loops over one body stay flat.
-- A trailing comment aligned with the one on the line above or below keeps
-  its column even when its line is re-indented (when the code leaves room).
-  Comment-only lines continuing an aligned trailing comment keep its column.
-  In conservative mode, comment lines indented deeper than the code
-  (commented-out code) keep their extra indentation.
-- Lines inside a `/* ... */` block move with the comment's first line, but
-  only when every one of them starts with that line's indentation.
-- `#if`/`#elif`/`#else` branches each start from the depth at `#if`, and
-  `#endif` continues from the end of the first branch, so branches that each
-  open a brace (common in LYGIA) keep the depth right. A lone branch (no
-  `#else`) that changes the depth is undone at `#endif`.
-- `#if 0` / `#if false` branches are not code: they are left exactly as they
-  are and do not count for the depth.
-- A file whose braces or parentheses do not balance keeps its indentation
-  (the other rules still apply).
+If your runtime provides uniforms or macros the shader does not declare, tell the extension about them. They then behave like builtins: hover, completion, highlighting, no undeclared-name reports, and declarations for `glslangValidator`.
 
-Never touched: preprocessor lines (trailing whitespace aside; LYGIA include
-guards, `#define`s, shader-toy `#iUniform` / `#iChannel` directives), lines
-continued with `\` (every line of the group; a `//` comment ending in `\`
-continues onto the next line), the text of comments, and everything between
-`// glsl-format off` and `// glsl-format on`:
-
-```glsl
-// glsl-format off
-const mat3 M = mat3( 0.00,  0.80,  0.60,
-                    -0.80,  0.36, -0.48,
-                    -0.60, -0.48,  0.64);
-// glsl-format on
-```
-
-The editor's tab size and spaces/tabs choice are used. `trimTrailingWhitespace`,
-`insertFinalNewline` and `trimFinalNewlines` apply unless the editor sends
-them as `false`. Lines are never wrapped or joined (apart from brace
-placement in opinionated mode), and every edit is minimal: only the changed
-characters are replaced, so cursors and undo behave. Formatting never changes
-the code's tokens; a result that would is discarded.
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `glslLsp.format.mode` | `conservative` | `conservative`, `opinionated` or `off` (see above). |
-| `glslLsp.format.maxBlankLines` | `1` | Longest run of blank lines kept. |
-| `glslLsp.format.braceStyle` | `preserve` | Opinionated mode only: `preserve`, `sameLine` (`void f() {`, `} else {`) or `nextLine` (`{` on its own line, `else` below `}`). Initializer lists and one-line blocks never move, and a brace never moves across a comment, a preprocessor line or a blank line. |
-| `glslLsp.format.indentPreprocessor` | `false` | Indent preprocessor lines to the brace depth of the surrounding code. |
-
-Example (opinionated):
-
-```glsl
-// before
-float f(float x){
-return x*x+-1.0*sin (x) ;
-}
-// after
-float f(float x) {
-    return x * x + -1.0 * sin(x);
+```jsonc
+// .vscode/settings.json
+{
+  "glslLsp.environment.uniforms": [
+    { "name": "u_time", "type": "float", "doc": "Seconds since start." },
+    { "name": "u_lights", "type": "vec4[8]", "doc": "Light positions (xyz) and radius (w)." }
+  ],
+  "glslLsp.environment.defines": { "MAX_LIGHTS": "8" }
 }
 ```
+
+More: [Environment in docs/configuration.md](docs/configuration.md#environment)
+
+## Shadertoy (optional)
+
+Shadertoy-style files are recognized automatically: `iTime`, `iResolution`, `iChannel0-3` and `mainImage` are known, and `mainImage` shaders are validated inside a generated `main()`. The directives of the [shader-toy](https://marketplace.visualstudio.com/items?itemName=stevensona.shader-toy) extension (`#iChannel`, `#iUniform`, `#iKeyboard`) are understood too. That extension is not required; when it is installed, a preview button appears in the editor title bar.
+
+More: [Shadertoy in docs/configuration.md](docs/configuration.md#shadertoy-integration-optional)
 
 ## Settings
 
-| Setting | Default | Description |
+| Setting | Default | What it does |
 | --- | --- | --- |
-| `glslLsp.includePaths` | `[]` | Extra include directories, searched after the including file's folder (absolute, or relative to each workspace folder). |
-| `glslLsp.diagnostics.enable` | `true` | Master switch for all diagnostics. |
-| `glslLsp.diagnostics.undeclared` | `true` | Report undeclared identifiers. |
-| `glslLsp.diagnostics.glslang.enable` | `true` | Validate with `glslangValidator`. |
-| `glslLsp.diagnostics.glslang.path` | `glslangValidator` | Path to the validator executable (a `.cmd`/`.bat` wrapper works on Windows). If it cannot be started or exits with an error and no output, a warning is shown once. |
-| `glslLsp.diagnostics.onType` | `true` | Re-validate while typing (debounced) instead of only on open/save. Changes on disk (an included file created, changed or deleted) always re-validate the open files that depend on them. |
-| `glslLsp.completion.autoInclude` | `true` | Offer symbols from files that are not included yet, and insert their `#include`. |
-| `glslLsp.rename.readOnlyPaths` | `["lygia"]` | Folders a rename never edits. Renaming a symbol declared there is refused. A bare name matches anywhere; an entry containing `/` matches a path relative to the workspace folder. Files outside the workspace folders are read-only unless open. |
-| `glslLsp.inlayHints.parameterNames` | `literals` | `none`, `literals` (hint literal arguments only) or `all`. |
-| `glslLsp.colors.mode` | `heuristic` | `heuristic` (literals that look like colors), `all` (every `vec3`/`vec4` literal in [0, 1]) or `off`. |
-| `glslLsp.shadertoy.enable` | `auto` | Where Shadertoy support applies: `auto`, `on` or `off` (legacy `true`/`false` mean `on`/`off`). See [Shadertoy integration](#shadertoy-integration-optional). |
-| `glslLsp.environment.uniforms` | `[]` | Uniforms your runtime provides: `{ name, type, doc? }`. See [Environment](#environment). |
-| `glslLsp.environment.defines` | `{}` | Macros your runtime defines: `{ "NAME": "value" }`. See [Environment](#environment). |
-| `glslLsp.index.exclude` | `["node_modules", ".git", "out", "dist", ".vscode-test"]` | Folders skipped when indexing. A bare name matches anywhere; an entry containing `/` (e.g. `vendor/old`) matches a path relative to the workspace folder. Changing it re-indexes. Files in skipped folders are still loaded when something includes them. |
-| `glslLsp.index.maxFiles` | `10000` | Maximum number of indexed files per workspace folder. |
-| `glslLsp.values.throttleMs` | `33` | Minimum milliseconds between document edits while dragging a Values widget (33 ms is about 30 per second). Raise it if the live preview stutters. |
-| `glslLsp.values.maxDecimals` | `4` | Maximum decimals written by the Values panel. Trailing zeros are trimmed. A literal that already has more decimals keeps its precision, and a value too small for the limit is written with an exponent (`1e-5`) rather than rounded to `0.0`. |
-| `glslLsp.values.followCursor` | `true` | Update the Values panel's cursor row as the cursor moves. When off, it updates when you switch editors or run **GLSL: Focus Values Panel**. |
-| `glslLsp.format.mode` | `conservative` | `conservative`, `opinionated` or `off`. See [Formatting](#formatting). |
-| `glslLsp.format.maxBlankLines` | `1` | Longest run of blank lines the formatter keeps. |
-| `glslLsp.format.braceStyle` | `preserve` | Opinionated mode: `preserve`, `sameLine` or `nextLine`. |
-| `glslLsp.format.indentPreprocessor` | `false` | Indent preprocessor lines to the brace depth. |
-| `glslLsp.trace.server` | `off` | Trace LSP traffic in the output channel. |
+| `glslLsp.includePaths` | `[]` | Extra folders searched by `#include` |
+| `glslLsp.diagnostics.glslang.enable` | `true` | Run `glslangValidator` for compiler errors |
+| `glslLsp.diagnostics.glslang.path` | `glslangValidator` | Path to the validator |
+| `glslLsp.environment.uniforms` | `[]` | Uniforms your runtime provides |
+| `glslLsp.environment.defines` | `{}` | Macros your runtime defines |
+| `glslLsp.environment.presets` | `[]` | `["three.js"]` for three.js shaders |
+| `glslLsp.shadertoy.enable` | `auto` | Where Shadertoy support applies: `auto`, `on` or `off` |
+| `glslLsp.format.mode` | `conservative` | `conservative`, `opinionated` or `off` |
+| `glslLsp.inlayHints.parameterNames` | `literals` | `none`, `literals` or `all` |
 
-Commands: **GLSL: Restart Language Server**, **GLSL: Show Language Server
-Output**, **GLSL: Re-index Workspace**, **GLSL: Pin Value at Cursor**,
-**GLSL: Unpin All Values**, **GLSL: Focus Values Panel**, the four nudge
-commands (see [Values panel](#values-panel-sliders-color-and-vector-pickers))
-and **GLSL: Show Shadertoy Preview** (only when the shader-toy extension is
-installed).
+All 25 settings and every command are in [docs/configuration.md](docs/configuration.md), or search `@ext:pablodegroot.glsl-lsp` in the Settings editor.
 
-> A folder that contains a file named `.glsl-lsp-ignore` is never indexed.
-> Add the marker to any folder of GLSL files you want ignored (vendored copies,
-> old experiments, test data).
->
-> Recognized file extensions: `.glsl`, `.frag`, `.vert`, `.comp`, `.geom`,
-> `.tesc`, `.tese`. `.fs`/`.vs` are not claimed (they are F# and other
-> languages too); map them with `files.associations` if they are shaders in
-> your project.
+## FAQ
 
-## Shadertoy integration (optional)
+<details>
+<summary>It says <code>glslangValidator</code> was not found</summary>
 
-Shadertoy support covers the Shadertoy uniforms (`iTime`, `iResolution`,
-`iMouse`, `iChannel0-3`, ...) and entry points (`mainImage`, `mainSound`,
-`mainVR`), the directives of the
-[shader-toy](https://marketplace.visualstudio.com/items?itemName=stevensona.shader-toy)
-extension (`#iChannelN`, `#iUniform`, `#iKeyboard` with its `isKeyDown` /
-`Key_*` helpers, the `iMouseButton` uniform) and validating `mainImage`
-shaders inside a generated `main()`. `glslLsp.shadertoy.enable` decides where
-it applies:
+Compiler checks are on by default, but the tool is optional. Install it with one of the commands in [Quick start](#quick-start) and run **GLSL: Restart Language Server**, or set `glslLsp.diagnostics.glslang.path` to its location. The notice also lets you turn compiler checks off or never see it again. Everything else works without it.
 
-| Value | Shadertoy support for |
-| --- | --- |
-| `auto` (default) | Files that define `mainImage` or use a shader-toy directive, plus the files they include and the files including them. Every GLSL file when the shader-toy extension is installed. Elsewhere, a library may still use Shadertoy names without a report (a Shadertoy shader may include it later), but a plain entry shader that defines `main()` gets them reported as undeclared. |
-| `on` | Every GLSL file. |
-| `off` | No file: plain GLSL only. `mainImage` files are validated as ordinary GLSL (no generated `main`), and Shadertoy names are reported as undeclared. |
+Only complete shaders are compiled: a file with `main()` and a `#version` line, or a `mainImage` shader with Shadertoy support. Other files get the fast checks only. See [docs/diagnostics.md](docs/diagnostics.md).
+</details>
 
-The shader-toy extension itself is **not required**: nothing depends on it,
-and everything above works without it. When it is installed, this extension
-adds **GLSL: Show Shadertoy Preview** to the command palette and a preview
-button to the editor title bar of GLSL files. Both run the shader-toy
-extension's own *Show GLSL Preview* command; they are hidden when the
-extension is not installed. This extension never renders anything itself.
-You may want to turn off `shader-toy.showCompileErrorsAsDiagnostics` if both
-report the same compile errors.
+<details>
+<summary>Does it work with Vulkan GLSL?</summary>
 
-## Environment
+Yes. A shader that uses Vulkan-only GLSL (`layout(set = ...)`, `push_constant`, `subpassInput`, `gl_VertexIndex`, ...) is compiled with Vulkan rules, everything else with OpenGL rules. To choose yourself, set `glslLsp.diagnostics.glslang.targetEnv` to `opengl` or `vulkan1.0` to `vulkan1.3`. Ray tracing, mesh and task shaders are not supported yet. See [Vulkan GLSL](docs/diagnostics.md#vulkan-glsl).
+</details>
 
-Shaders often run in a host that provides more than GLSL: a custom player,
-a game engine, a live-coding tool. Declare what it provides and the names
-behave like builtins: hover (signature and your Markdown doc, labelled
-*Environment uniform* / *Environment define*), completion, semantic
-highlighting, typing of members and indexes (`trail[0].xy`), no
-undeclared-identifier report, and declarations for `glslangValidator`.
+<details>
+<summary>three.js shaders report <code>position</code>, <code>projectionMatrix</code> and <code>#include &lt;common&gt;</code></summary>
+
+three.js adds those names and chunks when it compiles a `ShaderMaterial`. Turn on the three.js preset:
 
 ```jsonc
-// .vscode/settings.json of a project whose runtime adds a cursor trail and a light count
-{
-  "glslLsp.environment.uniforms": [
-    { "name": "iCursorTrail", "type": "vec2[8]", "doc": "The last 8 cursor positions in pixels, newest first." },
-    { "name": "iAudioLevel", "type": "float", "doc": "Smoothed audio input level in `[0, 1]`." }
-  ],
-  "glslLsp.environment.defines": {
-    "MY_RUNTIME": "",
-    "MAX_LIGHTS": "8"
-  }
+"glslLsp.environment.presets": ["three.js"]
+```
+
+The uniforms and attributes three.js always adds then behave like builtins, and `#include <chunk>` lines are not reported. Declare anything else your material adds in `glslLsp.environment.uniforms`. See [three.js and other runtimes](docs/diagnostics.md#threejs-and-other-runtimes-that-inject-code).
+</details>
+
+<details>
+<summary>I have another GLSL extension installed</summary>
+
+If it also provides diagnostics or completion, you will see duplicates. Disable that extension for the workspace, or turn off its validator. If both provide syntax highlighting, only one grammar is used, depending on the order the extensions load.
+</details>
+
+<details>
+<summary>My <code>.vs</code> / <code>.fs</code> files are not recognized</summary>
+
+`.vsh`, `.fsh`, `.vshader`, `.fshader`, `.glslv`, `.glslf` and the other common shader extensions are. `.vs` and `.fs` are also used by other languages (`.fs` is F#), so they are not claimed by default. Map them in your settings; the shader stage is still taken from the extension:
+
+```jsonc
+"files.associations": { "*.vs": "glsl", "*.fs": "glsl" }
+```
+</details>
+
+<details>
+<summary>Ctrl+Alt+Up/Down adds cursors instead of nudging (or the other way round)</summary>
+
+In a GLSL editor these keys nudge only when the cursor is on a number. Otherwise they fall back to the platform's default (Add Cursor Above/Below on Windows). In Remote sessions from Windows the fallback may not apply. To use other keys, rebind the four **GLSL: Increment/Decrement Number at Cursor** commands in Keyboard Shortcuts (Ctrl+K Ctrl+S). Some Windows graphics drivers take Ctrl+Alt+Arrow for screen rotation before VS Code sees it.
+</details>
+
+<details>
+<summary>How do I format on save?</summary>
+
+```jsonc
+"[glsl]": {
+  "editor.defaultFormatter": "pablodegroot.glsl-lsp",
+  "editor.formatOnSave": true
 }
 ```
 
-- `type` is a builtin GLSL type (`float`, `vec4`, `mat3`, `sampler2D`, ...);
-  arrays are written `type[size]` (`vec4[16]`).
-- Invalid entries are ignored: names that are not valid identifiers (keywords,
-  reserved words, `gl_` / `__` names), unknown types, duplicates. Define
-  values are kept on one line and lose a trailing `\`.
-- A uniform or define the shader declares itself wins: the environment's
-  copy is not passed to `glslangValidator`, so there is no redefinition error.
-  A uniform named like a Shadertoy builtin replaces that builtin.
-- With Shadertoy support the declarations follow the Shadertoy preamble; in
-  plain GLSL they go right after `#version` (`highp` in GLSL ES).
-- Changes apply immediately: diagnostics and highlighting refresh without a
-  restart.
+See [docs/formatting.md](docs/formatting.md) for the modes and rules.
+</details>
 
-## Relation to other extensions
+## Contributing
 
-- **shader-toy** (stevensona): see
-  [Shadertoy integration](#shadertoy-integration-optional).
-- **Other GLSL extensions** may also contribute the `glsl` language id and a
-  grammar. Several extensions contributing the same language id is normal in
-  VS Code: they are merged, and this language server works with either
-  grammar. If the highlighting looks different from what you expect, the last
-  grammar registered wins; disable the other extension's grammar or this
-  one's as you prefer.
+Bug reports and ideas are welcome in the [issue tracker](https://github.com/PabloDeGroot/glsl-lsp/issues). To build, test or debug the extension, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Install
-
-From source:
-
-```sh
-npm install
-npm run package                      # builds (minified) and writes glsl-lsp-<version>.vsix
-code --install-extension glsl-lsp-0.3.0.vsix
-```
-
-`glslangValidator` is optional. Install it from the Vulkan SDK or MSYS2's
-`mingw-w64-glslang`, or point `glslLsp.diagnostics.glslang.path` at it.
-
-## Development
-
-```sh
-npm install
-npm run watch        # rebuild dist/ on change
-npm run typecheck
-npm test             # unit tests + real-workspace tests (skipped without a shader workspace)
-npm run test:e2e     # just the end-to-end test: spawns dist/server.js over stdio
-```
-
-The real-workspace tests run against a real shader workspace, e.g. one with
-LYGIA: the folder in `GLSL_LSP_E2E_ROOT` (an error if it does not exist), or
-this repository's parent folder. Either is used only when it looks like a
-shader workspace (a `lygia/` folder, or `.glsl` files at the top or one folder
-down); otherwise those tests are skipped. They never modify it.
-
-`test/fixtures/` holds a `.glsl-lsp-ignore` marker, so when this repository
-is cloned inside a shader workspace its fixtures do not show up as completion
-candidates there.
-
-Press F5 in VS Code (**Run Extension**) to start an Extension Development
-Host on `test/fixtures/project`. Use the **Extension + Server** compound
-configuration to also attach a debugger to the server (port 6009).
-
-The Values panel UI can be checked without VS Code: run `npm run build`, then
-open `webview/dev/harness.html?theme=dark&scene=color` in a browser (themes
-`dark`, `light`, `hc`; scenes `color`, `float`, `vec2`, `vector`, `vec4`,
-`palette`, `multi`, `stale`, `empty`, `noEditor`, `hdr`, `locked`,
-`childColor`; `&w=320` sets the width, `&selftest=1` runs a scripted check of
-the messages it sends). The harness fakes the VS Code API and is not shipped.
-The panel's full design is in [docs/VALUES.md](docs/VALUES.md).
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the module map, the data model and
-a step-by-step guide to adding a feature.
+If the extension helps your shader work, a [rating on the Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodegroot.glsl-lsp&ssr=false#review-details) helps other GLSL developers find it.
 
 ## License
 
-MIT
+[MIT](LICENSE)

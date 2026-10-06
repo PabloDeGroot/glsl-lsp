@@ -2,7 +2,8 @@
 // change event. Mirrors `contributes.configuration` in package.json: keep the
 // two in sync when adding a setting (test/settings.test.ts checks it).
 
-import { sanitizeEnvironment, type EnvironmentUniform } from './builtins';
+import { ENVIRONMENT_PRESETS, isEnvironmentPreset, sanitizeEnvironment, type Environment, type EnvironmentPreset } from './builtins';
+import type { TargetEnvSetting } from './features/diagnostics/flatten';
 import type { FormatSettings } from './features/format/options';
 
 export interface Settings {
@@ -12,7 +13,8 @@ export interface Settings {
     enable: boolean;
     /** Report identifiers that resolve to nothing. */
     undeclared: boolean;
-    glslang: { enable: boolean; path: string };
+    /** `targetEnv`: OpenGL or Vulkan rules for glslang (`auto` detects Vulkan GLSL). */
+    glslang: { enable: boolean; path: string; targetEnv: TargetEnvSetting };
     onType: boolean;
   };
   completion: { autoInclude: boolean };
@@ -21,8 +23,11 @@ export interface Settings {
   colors: { mode: ColorMode };
   /** Shadertoy builtins, shader-toy directives and the mainImage wrapper: per file ('auto'), always ('on') or never ('off'). */
   shadertoy: { enable: ShadertoyMode };
-  /** Uniforms and macros the shader runtime provides (behave like builtins). */
-  environment: { uniforms: EnvironmentUniform[]; defines: Record<string, string> };
+  /**
+   * Uniforms and macros the shader runtime provides (behave like builtins).
+   * `uniforms` already includes those of the `presets`.
+   */
+  environment: Environment & { presets: EnvironmentPreset[] };
   index: { exclude: string[]; maxFiles: number };
   /** Values panel. Read by the extension client only; mirrored here so package.json and the defaults stay in sync. */
   values: { throttleMs: number; maxDecimals: number; followCursor: boolean };
@@ -37,13 +42,13 @@ export type ShadertoyMode = 'auto' | 'on' | 'off';
 
 export const defaultSettings: Settings = {
   includePaths: [],
-  diagnostics: { enable: true, undeclared: true, glslang: { enable: true, path: 'glslangValidator' }, onType: true },
+  diagnostics: { enable: true, undeclared: true, glslang: { enable: true, path: 'glslangValidator', targetEnv: 'auto' }, onType: true },
   completion: { autoInclude: true },
   rename: { readOnlyPaths: ['lygia'] },
   inlayHints: { parameterNames: 'literals' },
   colors: { mode: 'heuristic' },
   shadertoy: { enable: 'auto' },
-  environment: { uniforms: [], defines: {} },
+  environment: { uniforms: [], defines: {}, presets: [] },
   index: { exclude: ['node_modules', '.git', 'out', 'dist', '.vscode-test'], maxFiles: 10000 },
   values: { throttleMs: 33, maxDecimals: 4, followCursor: true },
   format: { mode: 'conservative', maxBlankLines: 1, braceStyle: 'preserve', indentPreprocessor: false },
@@ -84,6 +89,11 @@ function normalize(raw: unknown): unknown {
     const mode = v === true ? 'on' : v === false ? 'off' : v;
     out.shadertoy = { ...raw.shadertoy, enable: ['auto', 'on', 'off'].includes(mode as string) ? mode : undefined };
   }
+  if (isObject(raw.diagnostics) && isObject(raw.diagnostics.glslang)) {
+    const t = raw.diagnostics.glslang.targetEnv;
+    const targetEnv = ['auto', 'opengl', 'vulkan1.0', 'vulkan1.1', 'vulkan1.2', 'vulkan1.3'].includes(t as string) ? t : undefined;
+    out.diagnostics = { ...raw.diagnostics, glslang: { ...raw.diagnostics.glslang, targetEnv } };
+  }
   if (isObject(raw.format)) {
     const f = raw.format;
     out.format = {
@@ -110,7 +120,10 @@ export class SettingsStore {
     const merged = mergeSettings(defaultSettings, normalize(raw));
     // `defines` is a free-form map that mergeSettings (driven by the default's keys) would empty.
     const env = isObject(raw) && isObject(raw.environment) ? raw.environment : {};
-    merged.environment = sanitizeEnvironment(env as Partial<Settings['environment']>);
+    const presets = [...new Set(Array.isArray(env.presets) ? env.presets.filter(isEnvironmentPreset) : [])];
+    // The user's own uniforms come first: sanitizeEnvironment keeps the first of a name.
+    const uniforms = [...(Array.isArray(env.uniforms) ? env.uniforms : []), ...presets.flatMap((p) => ENVIRONMENT_PRESETS[p])];
+    merged.environment = { ...sanitizeEnvironment({ uniforms, defines: env.defines as Environment['defines'] }), presets };
     this.current = merged;
     for (const l of this.listeners) l(this.current, previous);
   }

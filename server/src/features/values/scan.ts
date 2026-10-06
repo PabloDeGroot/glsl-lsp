@@ -59,7 +59,8 @@ export function scanTokens(model: FileModel): Scan {
       if (!m) continue;
       const info: DirInfo = { kind: 'iUniform', name: m[2], declaredType: m[1], start: d.start, end: d.end, functionLike: false };
       const rest = text.slice(m[0].length);
-      const range = /\bin\s*\{\s*([^,}]*)\s*,\s*([^}]*)\}/.exec(text);
+      // Unambiguous (see core/directives.ts parseIUniform): the bounds are trimmed by parseBound.
+      const range = /\bin\s*\{([^,}]*),([^}]*)\}/.exec(text);
       if (range) {
         info.min = parseBound(range[1]);
         info.max = parseBound(range[2]);
@@ -68,7 +69,8 @@ export function scanTokens(model: FileModel): Scan {
       if (step) info.step = parseBound(step[1]);
       dirs.push(info);
       if (m[3]) {
-        const cut = rest.search(/\s+in\s*\{|\s+step\b/);
+        // One whitespace, not `\s+`: the latter is quadratic on a long run of spaces.
+        const cut = rest.search(/\s(?:in\s*\{|step\b)/);
         pushLexed(cut >= 0 ? rest.slice(0, cut) : rest, tok.start + m[0].length, dirs.length - 1);
       }
     }

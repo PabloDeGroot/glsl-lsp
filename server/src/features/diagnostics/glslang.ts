@@ -2,6 +2,9 @@
 // from the flattened translation unit back to the original files.
 
 import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { DiagnosticSeverity, type Diagnostic } from 'vscode-languageserver/node';
 import type { Range } from '../../core';
 import type { Flattened, LineOrigin } from './flatten';
@@ -148,10 +151,64 @@ export type GlslangRun =
   | { ok: false; reason: 'missing' | 'timeout' | 'aborted' | 'failed'; detail?: string };
 
 export interface RunOptions {
+  /** glslLsp.diagnostics.glslang.path: a bare name (looked up on PATH), an absolute path, or a path relative to `baseDir`. */
   exe: string;
+  /** Folder a relative `exe` such as `tools/glslangValidator` is resolved against (the first workspace folder). */
+  baseDir?: string;
   stage: string;
+  /** `--target-env` (`vulkan1.2`...); undefined: OpenGL rules. */
+  targetEnv?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+}
+
+export interface ResolveOptions {
+  baseDir?: string;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  /** Whether `p` is a file that can be run (injectable for tests). */
+  isExecutable?: (p: string) => boolean;
+}
+
+function isExecutableFile(p: string): boolean {
+  try {
+    if (!fs.statSync(p).isFile()) return false;
+    if (process.platform !== 'win32') fs.accessSync(p, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Absolute path of the validator, or undefined when it cannot be found. A bare
+ * name is looked up on PATH only, never in the current directory: Windows
+ * would otherwise run a `glslangValidator.exe` that the opened folder ships.
+ * Relative PATH entries are skipped for the same reason.
+ */
+export function resolveExecutable(exe: string, options: ResolveOptions = {}): string | undefined {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const p = platform === 'win32' ? path.win32 : path.posix;
+  const isExecutable = options.isExecutable ?? isExecutableFile;
+  let name = exe.trim();
+  if (!name) return undefined;
+  if (/^~[\\/]/.test(name)) name = p.join(os.homedir(), name.slice(2));
+  // On Windows a name without an extension means name.com, name.exe, name.bat... (PATHEXT order).
+  const pathext = (env.PATHEXT ?? env.Pathext ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const withExtensions = platform === 'win32' && !/\.[^\\/.]+$/.test(name);
+  const firstMatch = (base: string) => (withExtensions ? pathext.map((e) => base + e.toLowerCase()) : [base]).find((c) => isExecutable(c));
+  if (p.isAbsolute(name)) return firstMatch(name);
+  if (/[\\/]/.test(name)) return options.baseDir ? firstMatch(p.resolve(options.baseDir, name)) : undefined;
+  const dirs = (env.PATH ?? env.Path ?? '')
+    .split(p.delimiter)
+    .map((d) => d.replace(/^"(.*)"$/, '$1'))
+    .filter((d) => d && p.isAbsolute(d));
+  for (const dir of dirs) {
+    const found = firstMatch(p.join(dir, name));
+    if (found) return found;
+  }
+  return undefined;
 }
 
 export function runGlslang(source: string, options: RunOptions): Promise<GlslangRun> {
@@ -166,14 +223,23 @@ export function runGlslang(source: string, options: RunOptions): Promise<Glslang
       options.signal?.removeEventListener('abort', onAbort);
       resolve(r);
     };
+    const exe = resolveExecutable(options.exe, { baseDir: options.baseDir });
+    if (!exe) {
+      const where = /[\\/]/.test(options.exe) ? 'does not exist or is not executable' : 'was not found on PATH';
+      return resolve({ ok: false, reason: 'missing', detail: `'${options.exe}' ${where}` });
+    }
     let child: ReturnType<typeof spawn>;
     try {
       const args = ['--stdin', '-S', options.stage];
+      // Vulkan GLSL compiles to SPIR-V: without -o glslang writes <stage>.spv into its working directory.
+      if (options.targetEnv) args.push('--target-env', options.targetEnv, '-o', os.devNull);
+      // The validator's own folder: never the workspace, so nothing it resolves or writes lands there.
+      const spawnOptions = { windowsHide: true, cwd: path.dirname(exe) };
       // Node refuses to spawn .cmd/.bat wrappers without a shell (CVE-2024-27980 hardening).
-      if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(options.exe)) {
-        child = spawn(`"${options.exe}"`, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: true });
+      if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(exe)) {
+        child = spawn(`"${exe}"`, args, { ...spawnOptions, stdio: ['pipe', 'pipe', 'pipe'], shell: true });
       } else {
-        child = spawn(options.exe, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+        child = spawn(exe, args, { ...spawnOptions, stdio: ['pipe', 'pipe', 'pipe'] });
       }
     } catch (err) {
       // Cannot be started at all (EINVAL, bad path...): handled like a missing executable.

@@ -295,6 +295,8 @@ export interface Directive {
 export interface IncludeDirective {
   /** Path text inside the quotes (or angle brackets). */
   path: string;
+  /** Written `#include <path>`: usually a file the runtime or engine provides. */
+  angle?: boolean;
   /** Range of the path text, without quotes. */
   pathRange: Range;
   /** Range of the whole `#include "..."` line. */

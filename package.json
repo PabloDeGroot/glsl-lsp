@@ -1,7 +1,7 @@
 {
   "name": "glsl-lsp",
   "displayName": "GLSL Language Server",
-  "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting, formatting and more. Optional Shadertoy support, configurable runtime uniforms, LYGIA aware.",
+  "description": "GLSL completion, go to definition, rename and hover docs that follow your #includes, plus diagnostics, a formatter and live sliders and color pickers. For OpenGL, Vulkan, WebGL, LYGIA and Shadertoy.",
   "version": "0.4.0",
   "publisher": "pablodegroot",
   "license": "MIT",
@@ -25,19 +25,49 @@
   "keywords": [
     "glsl",
     "shader",
+    "shaders",
+    "opengl",
+    "webgl",
+    "vulkan",
+    "glsl es",
+    "glslang",
     "shadertoy",
     "lygia",
+    "intellisense",
+    "autocomplete",
+    "go to definition",
+    "formatter",
+    "linter",
+    "syntax highlighting",
     "language server",
-    "glslang",
-    "opengl",
-    "webgl"
+    "lsp",
+    "fragment shader",
+    "vertex shader",
+    "creative coding",
+    "color picker"
   ],
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1B1340",
+    "theme": "dark"
+  },
   "main": "./dist/client.js",
   "activationEvents": [
-    "onLanguage:glsl",
-    "onView:glslLsp.values"
+    "onLanguage:glsl"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode, glslangValidator only runs from a path set in your user settings; a workspace cannot choose the program.",
+      "restrictedConfigurations": [
+        "glslLsp.diagnostics.glslang.path"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": "limited",
+      "description": "Language features need files on disk: in virtual workspaces only syntax highlighting works."
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -53,8 +83,18 @@
           ".comp",
           ".geom",
           ".tesc",
-          ".tese"
+          ".tese",
+          ".vsh",
+          ".fsh",
+          ".gsh",
+          ".vshader",
+          ".fshader",
+          ".gshader",
+          ".glslv",
+          ".glslf",
+          ".glslg"
         ],
+        "firstLine": "^#version\\s+\\d{3}\\b",
         "configuration": "./language-configuration.json"
       }
     ],
@@ -154,12 +194,33 @@
         "glslLsp.diagnostics.glslang.path": {
           "type": "string",
           "default": "glslangValidator",
-          "markdownDescription": "Path to the `glslangValidator` executable (a `.cmd`/`.bat` wrapper works on Windows). The default looks it up on `PATH`."
+          "markdownDescription": "The `glslangValidator` executable: a name looked up on `PATH` (never in the workspace folder), an absolute path, or a path relative to the first workspace folder. A `.cmd`/`.bat` wrapper works on Windows. In Restricted Mode only the value from your user settings is used."
+        },
+        "glslLsp.diagnostics.glslang.targetEnv": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "opengl",
+            "vulkan1.0",
+            "vulkan1.1",
+            "vulkan1.2",
+            "vulkan1.3"
+          ],
+          "enumDescriptions": [
+            "OpenGL rules, or Vulkan 1.2 when the shader uses Vulkan-only GLSL (`layout(set = ...)`, `push_constant`, `subpassInput`, separate `texture2D`/`sampler`, `gl_VertexIndex`, ray tracing and mesh stages, Vulkan extensions).",
+            "Always OpenGL / OpenGL ES rules.",
+            "Vulkan 1.0 rules.",
+            "Vulkan 1.1 rules.",
+            "Vulkan 1.2 rules.",
+            "Vulkan 1.3 rules."
+          ],
+          "default": "auto",
+          "markdownDescription": "Which rules `glslangValidator` checks with (its `--target-env`). `auto` detects Vulkan GLSL per shader."
         },
         "glslLsp.diagnostics.onType": {
           "type": "boolean",
           "default": true,
-          "description": "Re-validate while typing (debounced) instead of only on save."
+          "description": "Re-validate while typing (debounced). When off, files are checked when opened and saved."
         },
         "glslLsp.completion.autoInclude": {
           "type": "boolean",
@@ -174,7 +235,7 @@
           "default": [
             "lygia"
           ],
-          "markdownDescription": "Folders whose files a rename never edits (third-party libraries such as LYGIA). Renaming a symbol declared there is refused. A bare name matches that folder anywhere; an entry containing `/` matches a path relative to the workspace folder. Files outside the workspace folders are always read-only."
+          "markdownDescription": "Folders whose files a rename never edits (third-party libraries such as LYGIA). Renaming a symbol declared there is refused. A bare name matches that folder anywhere; an entry containing `/` matches a path relative to the workspace folder. Files outside the workspace folders are read-only unless they are open in an editor."
         },
         "glslLsp.inlayHints.parameterNames": {
           "type": "string",
@@ -258,6 +319,21 @@
           },
           "markdownDescription": "Macros your shader runtime defines, as `{ \"NAME\": \"value\" }` (the value may be `\"\"`). They are known to hover, completion and the undeclared-identifier check, and are passed to `glslangValidator` as `#define NAME value`. Example: `{ \"MY_RUNTIME\": \"\", \"MAX_LIGHTS\": \"8\" }`."
         },
+        "glslLsp.environment.presets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "three.js"
+            ],
+            "enumDescriptions": [
+              "The uniforms and attributes three.js adds to a `ShaderMaterial` (`projectionMatrix`, `modelViewMatrix`, `position`, `uv`, ...), and `#include <chunk>` lines are not reported."
+            ]
+          },
+          "uniqueItems": true,
+          "default": [],
+          "markdownDescription": "Names a framework injects into your shaders, added to `#glslLsp.environment.uniforms#`. `three.js`: the `ShaderMaterial` uniforms and attributes (`modelMatrix`, `modelViewMatrix`, `projectionMatrix`, `viewMatrix`, `normalMatrix`, `cameraPosition`, `isOrthographic`, `position`, `normal`, `uv`); its `#include <chunk>` lines are not reported as unresolved."
+        },
         "glslLsp.index.exclude": {
           "type": "array",
           "items": {
@@ -294,7 +370,7 @@
         "glslLsp.values.followCursor": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Update the **Values** panel cursor row as the editor cursor moves. When off, it updates only on `GLSL: Focus Values Panel`."
+          "markdownDescription": "Update the **Values** panel cursor row as the editor cursor moves. When off, it updates when you switch editors or run `GLSL: Focus Values Panel`."
         },
         "glslLsp.format.mode": {
           "type": "string",
@@ -365,7 +441,8 @@
           "id": "glslLsp.values",
           "name": "Values",
           "icon": "media/values.svg",
-          "contextualTitle": "GLSL Values"
+          "contextualTitle": "GLSL Values",
+          "when": "glslLsp.active"
         }
       ]
     },

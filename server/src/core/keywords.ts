@@ -1,6 +1,8 @@
 // Language-level word sets the parser needs. Documentation for these words
 // lives in server/src/builtins; this file is only about syntax.
 
+import { GLSL_FILE_EXTENSIONS } from '../../../shared/glslFiles';
+
 export const BASIC_TYPES = new Set([
   'void', 'bool', 'int', 'uint', 'float', 'double',
   'vec2', 'vec3', 'vec4', 'dvec2', 'dvec3', 'dvec4', 'bvec2', 'bvec3', 'bvec4',
@@ -86,7 +88,7 @@ export function invalidIdentifierReason(name: string): string | undefined {
 
 export const SWIZZLE_RE = /^([xyzw]{1,4}|[rgba]{1,4}|[stpq]{1,4})$/;
 
-export const GLSL_FILE_EXTENSIONS = ['.glsl', '.frag', '.vert', '.comp', '.geom', '.tesc', '.tese'];
+export { GLSL_FILE_EXTENSIONS };
 
 export function isGlslPath(path: string): boolean {
   const lower = path.toLowerCase();

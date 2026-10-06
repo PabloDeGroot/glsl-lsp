@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "GLSL",
   "scopeName": "source.glsl",
-  "fileTypes": ["glsl", "frag", "vert", "comp", "geom", "tesc", "tese", "fs", "vs"],
+  "fileTypes": ["glsl", "frag", "vert", "comp", "geom", "tesc", "tese", "vsh", "fsh", "gsh", "vshader", "fshader", "gshader", "glslv", "glslf", "glslg"],
   "patterns": [
     { "include": "#comments" },
     { "include": "#preprocessor" },

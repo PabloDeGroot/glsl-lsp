@@ -9,12 +9,16 @@
 // open and save validate immediately, a new run cancels the previous glslang
 // process of the same file, and a change to an included file re-validates the
 // open files that depend on it.
+//
+// When glslangValidator cannot be started the server tells the client
+// (GLSLANG_MISSING_NOTIFICATION), which decides whether and how to say so.
 
 import type { Diagnostic } from 'vscode-languageserver/node';
 import type { ServerContext } from '../context';
-import { normalizeUri, type Workspace } from '../core';
+import type { Settings } from '../settings';
+import { isFileUri, normalizeUri, uriToFsPath, type Workspace } from '../core';
 import { computeFastDiagnostics, type FastOptions } from './diagnostics/fast';
-import { flatten, planValidation } from './diagnostics/flatten';
+import { flatten, planValidation, type TargetEnvSetting } from './diagnostics/flatten';
 import { mapGlslangMessages, parseGlslangOutput, runGlslang, type GlslangRun } from './diagnostics/glslang';
 import { DiagnosticStore } from './diagnostics/store';
 
@@ -25,7 +29,21 @@ export { DiagnosticStore } from './diagnostics/store';
 
 const DEBOUNCE_MS = 300;
 
-export type Runner = (source: string, stage: string, signal?: AbortSignal) => Promise<GlslangRun>;
+function fastOptionsOf(s: Settings): FastOptions {
+  return { undeclared: s.diagnostics.undeclared, ignoreAngleIncludes: s.environment.presets.includes('three.js') };
+}
+
+/** Server -> client: glslangValidator could not be started (`{ path, detail }`). */
+export const GLSLANG_MISSING_NOTIFICATION = 'glslLsp/glslangMissing';
+
+export interface GlslangMissingParams {
+  /** glslLsp.diagnostics.glslang.path as configured. */
+  path: string;
+  detail?: string;
+}
+
+/** `targetEnv` is glslang's `--target-env` (`vulkan1.2`...); undefined: OpenGL rules. */
+export type Runner = (source: string, stage: string, signal?: AbortSignal, targetEnv?: string) => Promise<GlslangRun>;
 
 export type GlslangOutcome =
   | { kind: 'skipped' }
@@ -36,15 +54,22 @@ export type GlslangOutcome =
 export async function computeGlslangDiagnostics(
   ws: Workspace,
   uriIn: string,
-  options: { /** Shadertoy support for this file; default: the workspace decides (Workspace.shadertoyActive). */ shadertoy?: boolean; run: Runner; signal?: AbortSignal },
+  options: {
+    /** Shadertoy support for this file; default: the workspace decides (Workspace.shadertoyActive). */
+    shadertoy?: boolean;
+    /** glslLsp.diagnostics.glslang.targetEnv; default `auto`. */
+    targetEnv?: TargetEnvSetting;
+    run: Runner;
+    signal?: AbortSignal;
+  },
 ): Promise<GlslangOutcome> {
   const uri = normalizeUri(uriIn);
   const model = ws.getModel(uri);
   if (!model) return { kind: 'skipped' };
   const plan = planValidation(model, options.shadertoy ?? ws.shadertoyActive(model));
   if (!plan) return { kind: 'skipped' };
-  const flat = flatten(ws, uri, { shadertoy: plan.shadertoy, stage: plan.stage });
-  const result = await options.run(flat.source, flat.stage, options.signal);
+  const flat = flatten(ws, uri, { shadertoy: plan.shadertoy, stage: plan.stage, targetEnv: options.targetEnv });
+  const result = await options.run(flat.source, flat.stage, options.signal, flat.targetEnv);
   if (!result.ok) return { kind: 'failed', reason: result.reason, detail: result.detail };
   const messages = parseGlslangOutput(result.output);
   // A non-zero exit without any parsed message is a broken run (crash, missing DLL,
@@ -110,8 +135,12 @@ export function register(ctx: ServerContext): void {
     controllers.delete(uri);
   }
 
-  const run: Runner = (source, stage, signal) =>
-    runGlslang(source, { exe: settings().diagnostics.glslang.path || 'glslangValidator', stage, signal, timeoutMs: 5000 });
+  const run: Runner = (source, stage, signal, targetEnv) => {
+    // A relative validator path is resolved against the first workspace folder, only in a trusted workspace.
+    const root = ctx.workspaceTrusted ? ctx.workspace.workspaceRoots[0] : undefined;
+    const baseDir = root && isFileUri(root) ? uriToFsPath(root) : undefined;
+    return runGlslang(source, { exe: settings().diagnostics.glslang.path || 'glslangValidator', baseDir, stage, targetEnv, signal, timeoutMs: 5000 });
+  };
 
   async function validate(uri: string) {
     timers.delete(uri);
@@ -120,7 +149,7 @@ export function register(ctx: ServerContext): void {
       publish([uri]); // clears what was shown before the setting changed
       return;
     }
-    const fastOptions: FastOptions = { undeclared: settings().diagnostics.undeclared };
+    const fastOptions = fastOptionsOf(settings());
     try {
       publish(store.setFast(uri, computeFastDiagnostics(ctx.workspace, uri, fastOptions)));
     } catch (err) {
@@ -135,7 +164,8 @@ export function register(ctx: ServerContext): void {
     controllers.set(uri, controller);
     try {
       const outcome = await computeGlslangDiagnostics(ctx.workspace, uri, {
-        run: (s, st) => run(s, st, controller.signal),
+        targetEnv: settings().diagnostics.glslang.targetEnv,
+        run: (s, st, _signal, env) => run(s, st, controller.signal, env),
         signal: controller.signal,
       });
       if (controller.signal.aborted || controllers.get(uri) !== controller) return; // stale
@@ -146,10 +176,9 @@ export function register(ctx: ServerContext): void {
         glslangDisabledForSession = true;
         if (!warnedMissing) {
           warnedMissing = true;
-          ctx.log.warn(`could not run glslangValidator: ${outcome.detail ?? ''}`);
-          void ctx.connection.window.showWarningMessage(
-            `glsl-lsp: could not run '${settings().diagnostics.glslang.path}'${outcome.detail ? ` (${outcome.detail})` : ''}. Install glslangValidator or set glslLsp.diagnostics.glslang.path. Compiler diagnostics are disabled until the setting changes.`,
-          );
+          ctx.log.warn(`could not run glslangValidator: ${outcome.detail ?? ''}. Compiler diagnostics are off until glslLsp.diagnostics.glslang.* changes.`);
+          const params: GlslangMissingParams = { path: settings().diagnostics.glslang.path, detail: outcome.detail };
+          void ctx.connection.sendNotification(GLSLANG_MISSING_NOTIFICATION, params);
         }
       } else if (outcome.reason === 'timeout') {
         ctx.log.warn(`glslangValidator timed out for ${uri}`);
@@ -158,7 +187,7 @@ export function register(ctx: ServerContext): void {
         if (!warnedFailed) {
           warnedFailed = true;
           void ctx.connection.window.showWarningMessage(
-            `glsl-lsp: glslangValidator ('${settings().diagnostics.glslang.path}') did not run correctly: ${outcome.detail ?? 'unknown error'}. See the GLSL output channel.`,
+            `glslangValidator ('${settings().diagnostics.glslang.path}') did not run correctly: ${outcome.detail ?? 'unknown error'}. See the GLSL output channel.`,
           );
         }
       }
@@ -209,7 +238,7 @@ export function register(ctx: ServerContext): void {
         fastTimers.delete(uri);
         if (!enabled() || !ctx.documents.get(openUris().get(uri) ?? uri)) return;
         try {
-          publish(store.setFast(uri, computeFastDiagnostics(ctx.workspace, uri, { undeclared: settings().diagnostics.undeclared })));
+          publish(store.setFast(uri, computeFastDiagnostics(ctx.workspace, uri, fastOptionsOf(settings()))));
         } catch (err) {
           ctx.log.error(`fast diagnostics failed for ${uri}: ${(err as Error).stack ?? err}`);
         }
@@ -232,13 +261,18 @@ export function register(ctx: ServerContext): void {
   });
 
   ctx.onIndexed(revalidateAll);
-  // The shader-toy extension was installed or removed (settings changes are handled below).
+  // The shader-toy extension was installed or removed, or the workspace was trusted (settings
+  // changes are handled below). Trust can make a relative glslang path usable: try it again.
   ctx.onEnvironmentChanged((reason) => {
-    if (reason === 'client') revalidateAll();
+    if (reason !== 'client') return;
+    glslangDisabledForSession = false;
+    revalidateAll();
   });
 
   ctx.settings.onDidChange((s, prev) => {
-    if (s.diagnostics.glslang.path !== prev.diagnostics.glslang.path || s.diagnostics.glslang.enable !== prev.diagnostics.glslang.enable) {
+    const glslang = s.diagnostics.glslang;
+    const before = prev.diagnostics.glslang;
+    if (glslang.path !== before.path || glslang.enable !== before.enable || glslang.targetEnv !== before.targetEnv) {
       glslangDisabledForSession = false;
       warnedMissing = false;
       warnedFailed = false;

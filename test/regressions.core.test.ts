@@ -207,3 +207,37 @@ describe('parser recovery: unclosed struct', () => {
     expect(m.blocks[0].fields.map((f) => f.name)).toEqual(['a', 'b']);
   });
 });
+
+describe('#iUniform range parsing', () => {
+  const iUniform = (model: ReturnType<typeof parseText>, name: string) => {
+    const sym = model.symbols.find((s) => s.name === name);
+    return sym && 'iUniform' in sym ? sym.iUniform : undefined;
+  };
+
+  // The old `in\s*\{\s*([^,}]*)\s*,` pattern backtracked cubically: 4000 spaces took seconds.
+  it('stays fast on a long unclosed range', async () => {
+    const { scanTokens } = await import('../server/src/features/values/scan');
+    const line = `#iUniform float x = 1.0 in {${' '.repeat(100_000)}x\nvoid main() {}\n`;
+    const t0 = performance.now();
+    const model = parseText(line);
+    scanTokens(model);
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(iUniform(model, 'x')?.min).toBeUndefined();
+  });
+
+  it('stays fast on a long default value', async () => {
+    const { scanTokens } = await import('../server/src/features/values/scan');
+    const t0 = performance.now();
+    const model = parseText(`#iUniform float y = 1${' '.repeat(100_000)}x\n`);
+    scanTokens(model);
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(iUniform(model, 'y')?.defaultValue).toMatch(/^1 +x$/);
+  });
+
+  it('still reads the bounds, with or without spaces', () => {
+    const model = parseText('#iUniform float a = 1.0 in {0.0,4.0}\n#iUniform float b = 1.0 in {  -1.0 ,  2.5  } step 0.1\n');
+    expect(iUniform(model, 'a')).toMatchObject({ min: '0.0', max: '4.0' });
+    expect(iUniform(model, 'b')).toMatchObject({ defaultValue: '1.0', min: '-1.0', max: '2.5', step: '0.1' });
+    expect(iUniform(parseText('#iUniform float c = 0.5   step 0.1\n'), 'c')).toMatchObject({ defaultValue: '0.5', step: '0.1' });
+  });
+});

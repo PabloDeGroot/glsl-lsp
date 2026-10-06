@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.4.0
+## 0.4.0 — 2026-10-06
 
-- **Formatting**: `textDocument/formatting`, `rangeFormatting` and
-  `onTypeFormatting` (after `}`, `;` and Enter: re-indents the current line).
+A GLSL formatter that fixes indentation and spacing and leaves your hand
+alignment alone, Vulkan GLSL validation, a three.js preset, and safer
+handling of untrusted folders.
+
+- **Formatting**: Format Document, Format Selection and format on type
+  (after `}`, `;` and Enter it re-indents the current line).
   - `glslLsp.format.mode`: `conservative` (default) changes only
     indentation (brace and parenthesis depth; continuation lines get at least
     one extra level and keep deeper hand alignment), trailing whitespace, runs
@@ -33,10 +37,44 @@
     options; CRLF files stay CRLF. Edits are minimal (only changed
     characters), range formatting uses the depth from the whole document,
     and a result that would change the code's tokens is discarded.
-  - Tests check token preservation and idempotence in every mode over every
-    `.glsl` file of a real workspace (LYGIA included) when one is available.
+- **Vulkan GLSL**: shaders that use Vulkan-only GLSL (`layout(set = ...)`,
+  `push_constant`, `subpassInput`, separate textures and samplers,
+  `gl_VertexIndex`, Vulkan extensions) are compiled with Vulkan rules instead
+  of getting false errors. New setting `glslLsp.diagnostics.glslang.targetEnv`
+  (`auto`, `opengl`, `vulkan1.0` to `vulkan1.3`). glslangValidator never
+  writes `.spv` files. Environment uniforms are declared in a uniform block
+  with explicit bindings for Vulkan.
+- **three.js**: new setting `glslLsp.environment.presets`; `["three.js"]`
+  declares the uniforms and attributes three.js adds to a `ShaderMaterial`,
+  stops reporting `#include <chunk>` lines, and skips undeclared-name reports
+  in files that include a chunk. Without it, an unresolved
+  `#include <...>` is now a warning (it usually names a file the engine
+  supplies), and its message keeps the angle brackets.
+- **More file extensions** open as GLSL: `.vsh`, `.fsh`, `.gsh`, `.vshader`,
+  `.fshader`, `.gshader`, `.glslv`, `.glslf`, `.glslg`, and any file whose
+  first line is `#version` when no other language claims its extension.
+- **glslangValidator not found**: instead of a warning every session, an
+  information notice with *How to Install*, *Turn Off Compiler Checks* and
+  *Don't Show Again*. A path you configured that does not work still warns,
+  with *Open Setting*.
+- **Workspace Trust**: the extension now works in Restricted Mode. There, a
+  workspace's `glslLsp.diagnostics.glslang.path` is ignored.
+- **Security**: a bare `glslangValidator` is looked up on `PATH` only. On
+  Windows the current folder was searched first, so a repository could ship a
+  `glslangValidator.exe` that ran when a shader was opened. The language
+  server and glslangValidator no longer run with the workspace as their
+  working directory.
+- **Fix**: a long `#iUniform ... in {` line without a closing brace could
+  hang the language server for minutes.
+- The **GLSL** Activity Bar icon only appears once a GLSL file has been
+  opened, not in every workspace.
+- The old boolean `glslLsp.shadertoy.enable` is migrated in user settings
+  only; workspace settings files are no longer rewritten.
+- **Documentation**: a shorter README with screenshots; the reference
+  material moved to `docs/` (features, diagnostics, formatting, Values panel,
+  configuration) and the development notes to `CONTRIBUTING.md`.
 
-## 0.3.0
+## 0.3.0 — 2026-10-06
 
 glsl-lsp is now a standalone, generic GLSL extension: Shadertoy support is
 optional, and runtime-specific uniforms are configured instead of built in.
@@ -82,13 +120,12 @@ optional, and runtime-specific uniforms are configured instead of built in.
 - Errors on generated lines of plain GLSL no longer mention a Shadertoy
   wrapper.
 - Marketplace icon and more keywords.
-- Tests that use a real shader workspace read it from `GLSL_LSP_E2E_ROOT` (an
-  error when that folder does not exist), or use this repository's parent
-  folder; either only when it looks like one (a `lygia/` folder or `.glsl`
-  files), and skip otherwise. The end-to-end test runs on scratch buffers, so
-  any such workspace works. **Run Extension** opens `test/fixtures/project`.
 
-## 0.2.0
+## 0.2.0 — 2026-10-06
+
+The Values panel: sliders, a trackpad, color and direction pickers and a
+palette editor that edit the numbers in your shader as you drag, plus many
+fixes to completion, rename and diagnostics.
 
 - **Values panel** (new Activity Bar view **GLSL › Values**): interactive
   widgets for the numbers in a shader, inspired by glslEditor.
@@ -110,16 +147,17 @@ optional, and runtime-specific uniforms are configured instead of built in.
     **GLSL: Unpin All Values**, **GLSL: Focus Values Panel**.
   - Native look from the VS Code theme (light, dark, high contrast), crisp
     canvases, full keyboard support, strict content security policy.
-- **Nudge commands**: `Ctrl+Alt+Up/Down` (`Ctrl+Shift+Alt+Up/Down` for x10)
-  in GLSL editors increment/decrement the number under the cursor by its last
-  decimal place, with multiple cursors. When the cursor is not on a number
-  the keys do what they do by default on the platform (*Add Cursor
-  Above/Below* on Windows, column selection), so multi-cursor editing keeps
-  working in GLSL files; several cursors nudge only when all are on numbers.
+- **Nudge commands**: `Ctrl+Alt+Up/Down` (`Ctrl+Shift+Alt+Up/Down` for x10;
+  `Ctrl+Option` instead of `Ctrl+Alt` on macOS) in GLSL editors
+  increment/decrement the number under the cursor by its last decimal place,
+  with multiple cursors. When the cursor is not on a number the keys do what
+  they do by default (*Add Cursor Above/Below* on Windows, column selection
+  with Shift on Windows and Linux), so multi-cursor editing keeps working in
+  GLSL files; several cursors nudge only when all are on numbers.
 - New settings `glslLsp.values.throttleMs`, `glslLsp.values.maxDecimals`,
   `glslLsp.values.followCursor`.
-- Server: custom request `glslLsp/valueTargets` (no capability needed; answers
-  `null` / `match: 'none'` for unknown documents instead of failing).
+
+Fixes and improvements:
 
 - **Completion**
   - Ctrl+Space with an empty prefix now lists not-yet-included functions and
@@ -167,8 +205,7 @@ optional, and runtime-specific uniforms are configured instead of built in.
     workspace folder) drops files that are no longer indexed and reloads
     included files outside the workspace.
   - Watched-file events inside excluded folders do not index those files.
-  - A folder containing a `.glsl-lsp-ignore` file is never indexed (this
-    repository's `test/fixtures/` has one).
+  - A folder containing a `.glsl-lsp-ignore` file is never indexed.
   - A UTF-8 byte order mark at the start of a file is ignored.
   - `.fs`/`.vs` are no longer claimed as GLSL (F# and others use them).
 - **Diagnostics**
@@ -190,18 +227,20 @@ optional, and runtime-specific uniforms are configured instead of built in.
 - **Colors**: no swatches on direction/position vectors (`lightDir`, `sunPos`,
   `dot(n, vec3(...))`).
 
-## 0.1.0
+## 0.1.0 — 2026-10-06
 
-First release.
+First release: hover docs, completion with automatic `#include`, navigation
+and rename across includes, diagnostics with optional `glslangValidator`,
+signature help and inlay hints.
 
 - **Core**
-  - Tolerant lexer and parser that never throws on code being edited.
-  - Directive scanner covering `#include`, `#define`, conditionals and the
-    shader-toy directives.
-  - Doc-comment extraction: `//` and `/* */` comments above a declaration,
-    trailing comments, and LYGIA YAML blocks.
-  - Include resolution, include graph and workspace index. Indexing the full
-    LYGIA tree takes about 0.65 s.
+  - A tolerant parser that keeps working on code being edited.
+  - Understands `#include`, `#define`, conditionals and the shader-toy
+    directives.
+  - Doc comments: `//` and `/* */` comments above a declaration, trailing
+    comments, and LYGIA YAML blocks.
+  - Follows includes across the workspace. Indexing the full LYGIA tree takes
+    about 0.65 s.
 - **Hover**: every overload's signature, rendered docs, where the symbol is
   defined, and the `#include` to add when it is not included yet.
 - **Completion**
@@ -236,5 +275,5 @@ First release.
   - `inlayHints.parameterNames` (`none` / `literals` / `all`);
   - `colors.mode`;
   - `index.exclude`, which accepts relative paths.
-- TextMate grammar, language configuration, and an end-to-end test that drives
-  the bundled server over stdio.
+- TextMate grammar and language configuration (comments, brackets,
+  auto-closing pairs).

@@ -61,6 +61,8 @@ export const CLIENT_ENVIRONMENT_NOTIFICATION = 'glslLsp/clientEnvironment';
 export interface ClientEnvironment {
   /** The stevensona.shader-toy extension is installed (glslLsp.shadertoy.enable 'auto' then applies Shadertoy everywhere). */
   shaderToyInstalled?: boolean;
+  /** VS Code's Workspace Trust (false in Restricted Mode). */
+  workspaceTrusted?: boolean;
 }
 
 const connection = createConnection(ProposedFeatures.all);
@@ -73,6 +75,7 @@ const workspace = new Workspace({ fs: new NodeFileSystem(), builtins });
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 let indexed = false;
+let workspaceTrusted = true;
 const indexedListeners = new Set<() => void>();
 const environmentListeners = new Set<(reason: 'settings' | 'client') => void>();
 
@@ -110,6 +113,9 @@ const ctx: ServerContext = {
   get indexed() {
     return indexed;
   },
+  get workspaceTrusted() {
+    return workspaceTrusted;
+  },
   clientCapabilities: { snippetSupport: false, markdown: true, workDoneProgress: false, semanticTokensRefresh: false, inlayHintRefresh: false },
 };
 
@@ -124,10 +130,17 @@ function applySettings(s: Settings) {
 }
 
 function applyClientEnvironment(env: ClientEnvironment | undefined): boolean {
-  if (typeof env?.shaderToyInstalled !== 'boolean' || env.shaderToyInstalled === workspace.shaderToyExtension) return false;
-  workspace.configure({ shaderToyExtension: env.shaderToyInstalled });
-  log.info(`shader-toy extension ${env.shaderToyInstalled ? 'installed' : 'not installed'}`);
-  return true;
+  let changed = false;
+  if (typeof env?.workspaceTrusted === 'boolean' && env.workspaceTrusted !== workspaceTrusted) {
+    workspaceTrusted = env.workspaceTrusted;
+    changed = true;
+  }
+  if (typeof env?.shaderToyInstalled === 'boolean' && env.shaderToyInstalled !== workspace.shaderToyExtension) {
+    workspace.configure({ shaderToyExtension: env.shaderToyInstalled });
+    log.info(`shader-toy extension ${env.shaderToyInstalled ? 'installed' : 'not installed'}`);
+    changed = true;
+  }
+  return changed;
 }
 
 async function pullSettings() {

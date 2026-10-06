@@ -10,11 +10,19 @@
 // the Shadertoy preamble, or right after the root file's #version line for
 // plain GLSL. Every output line maps to (uri, line) so glslang messages can
 // be reported where the code was written.
+//
+// glslang checks plain GLSL with OpenGL rules unless the unit is Vulkan GLSL
+// (glslLsp.diagnostics.glslang.targetEnv, `auto` detects it): then the
+// environment uniforms get explicit bindings, as Vulkan requires.
 
 import { splitArrayType, type Environment } from '../../builtins';
 import { normalizeUri, type FileModel, type Range, type Workspace } from '../../core';
 
-export type Stage = 'vert' | 'tesc' | 'tese' | 'geom' | 'frag' | 'comp';
+/** glslangValidator `-S` stage names. */
+export type Stage = 'vert' | 'tesc' | 'tese' | 'geom' | 'frag' | 'comp' | 'rgen' | 'rint' | 'rahit' | 'rchit' | 'rmiss' | 'rcall' | 'mesh' | 'task';
+
+/** glslLsp.diagnostics.glslang.targetEnv */
+export type TargetEnvSetting = 'auto' | 'opengl' | 'vulkan1.0' | 'vulkan1.1' | 'vulkan1.2' | 'vulkan1.3';
 
 export interface RootInclude {
   /** Line of the #include in the root file. */
@@ -38,6 +46,8 @@ export interface Flattened {
   lineMap: (LineOrigin | undefined)[];
   stage: Stage;
   shadertoy: boolean;
+  /** `--target-env` for glslang (`vulkan1.2`...); undefined: OpenGL rules. */
+  targetEnv?: string;
   /** Every file inlined, root first. */
   files: string[];
   /**
@@ -60,16 +70,63 @@ const STAGE_BY_EXT: Record<string, Stage> = {
   gs: 'geom',
   comp: 'comp',
   cs: 'comp',
+  gsh: 'geom',
+  vshader: 'vert',
+  fshader: 'frag',
+  gshader: 'geom',
+  glslv: 'vert',
+  glslf: 'frag',
+  glslg: 'geom',
+  rgen: 'rgen',
+  rint: 'rint',
+  rahit: 'rahit',
+  rchit: 'rchit',
+  rmiss: 'rmiss',
+  rcall: 'rcall',
+  mesh: 'mesh',
+  task: 'task',
 };
 
-/** Stage from the file name: `x.vert`, `x.vert.glsl`, `x.vs.glsl`... (default fragment). */
+/** Stages that only exist in Vulkan GLSL. */
+const VULKAN_STAGES: ReadonlySet<Stage> = new Set(['rgen', 'rint', 'rahit', 'rchit', 'rmiss', 'rcall', 'mesh', 'task']);
+
+/** Target `auto` picks for Vulkan GLSL (1.2: ray tracing and mesh shaders need SPIR-V 1.4; supported by every recent glslang). */
+const AUTO_VULKAN_TARGET = 'vulkan1.2';
+
+/** Syntax only Vulkan GLSL accepts (descriptor sets, push constants, subpass inputs, separate textures and samplers, ...). */
+const VULKAN_SYNTAX: RegExp[] = [
+  /\blayout\s*\([^)]*\b(?:set\s*=|push_constant\b|constant_id\s*=|input_attachment_index\s*=|shaderRecord(?:EXT|NV)\b)/,
+  /\b[iu]?subpassInput(?:MS)?\b/,
+  /\bgl_(?:VertexIndex|InstanceIndex)\b/,
+  /\buniform\s+(?:(?:lowp|mediump|highp)\s+)?(?:[iu]?texture(?:1D|2D|3D|Cube|2DRect|Buffer|1DArray|2DArray|CubeArray|2DMS|2DMSArray)|sampler|samplerShadow)\s+[A-Za-z_]/,
+  /#\s*extension\s+GL_(?:KHR_vulkan_glsl|EXT_ray_tracing|NV_ray_tracing|EXT_ray_query|EXT_mesh_shader|EXT_buffer_reference\w*|EXT_nonuniform_qualifier|EXT_scalar_block_layout)\b/,
+];
+
+/** True when the source uses Vulkan-only GLSL (comments are ignored). */
+export function usesVulkanGlsl(source: string): boolean {
+  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ');
+  return VULKAN_SYNTAX.some((re) => re.test(code));
+}
+
+/** `--target-env` for a unit: undefined means OpenGL rules. Shadertoy wrappers are always OpenGL ES. */
+export function resolveTargetEnv(setting: TargetEnvSetting, stage: Stage, source: string): string | undefined {
+  if (setting === 'opengl') return undefined;
+  if (setting !== 'auto') return setting;
+  return VULKAN_STAGES.has(stage) || usesVulkanGlsl(source) ? AUTO_VULKAN_TARGET : undefined;
+}
+
+/**
+ * Stage from the file name: `x.vert`, `x.vert.glsl`, `x.vs.glsl`... (default
+ * fragment). The Vulkan-only stages count only as the last extension, so that
+ * `skinned.mesh.glsl` stays a fragment shader.
+ */
 export function stageForUri(uri: string): Stage {
   const base = uri.toLowerCase().replace(/[?#].*$/, '').split('/').pop() ?? '';
   const parts = base.split('.').slice(1).reverse();
-  for (const ext of parts) {
+  for (const [i, ext] of parts.entries()) {
     if (ext === 'glsl') continue;
     const stage = STAGE_BY_EXT[ext];
-    if (stage) return stage;
+    if (stage && (i === 0 || !VULKAN_STAGES.has(stage))) return stage;
   }
   return 'frag';
 }
@@ -162,22 +219,35 @@ const SHADERTOY_PREAMBLE_NAMES: ReadonlySet<string> = new Set([
 /** Types that take a precision qualifier (GLSL ES needs one for a uniform declared before the file's `precision` statement). */
 const PRECISION_TYPE = /^(float|int|uint|[iu]?vec[234]|mat[234](x[234])?|[iu]?sampler\w+|[iu]?image\w+)$/;
 
+/** Types that cannot be members of a uniform block. */
+const OPAQUE_TYPE = /^(?:[iu]?sampler\w+|[iu]?image\w+|[iu]?texture\w+|[iu]?subpassInput\w*|atomic_uint)$/;
+
+/** Descriptor set of the environment uniforms in Vulkan GLSL (high, to stay clear of the shader's own sets). */
+const VULKAN_ENV_SET = 7;
+
 /**
  * The environment's `#define` and `uniform` lines, skipping names the unit
- * declares itself (`declared`) so nothing is defined twice.
+ * declares itself (`declared`) so nothing is defined twice. Vulkan GLSL has no
+ * loose non-opaque uniforms and wants a binding on every resource: the plain
+ * uniforms go into one nameless block, every resource gets its own binding.
  */
-export function environmentLines(env: Environment, declared: ReadonlySet<string>, options: { es: boolean }): string[] {
+export function environmentLines(env: Environment, declared: ReadonlySet<string>, options: { es: boolean; vulkan?: boolean }): string[] {
   const lines: string[] = [];
   for (const [name, value] of Object.entries(env.defines)) {
     if (declared.has(name)) continue;
     lines.push(value ? `#define ${name} ${value}` : `#define ${name}`);
   }
+  const members: string[] = [];
+  let binding = 1;
   for (const u of env.uniforms) {
     if (declared.has(u.name)) continue;
     const { base, array } = splitArrayType(u.type);
     const precision = options.es && PRECISION_TYPE.test(base) ? 'highp ' : '';
-    lines.push(`uniform ${precision}${base} ${u.name}${array};`);
+    if (!options.vulkan) lines.push(`uniform ${precision}${base} ${u.name}${array};`);
+    else if (OPAQUE_TYPE.test(base)) lines.push(`layout(set = ${VULKAN_ENV_SET}, binding = ${binding++}) uniform ${precision}${base} ${u.name}${array};`);
+    else members.push(`${precision}${base} ${u.name}${array};`);
   }
+  if (members.length) lines.push(`layout(set = ${VULKAN_ENV_SET}, binding = 0) uniform GlslLspEnvironment { ${members.join(' ')} };`);
   return lines;
 }
 
@@ -192,6 +262,8 @@ function splitLines(text: string): string[] {
 export interface FlattenOptions {
   shadertoy: boolean;
   stage?: Stage;
+  /** Which rules glslang applies (default `auto`: Vulkan when the unit uses Vulkan GLSL). */
+  targetEnv?: TargetEnvSetting;
   /** Uniforms and defines of the shader runtime; defaults to the workspace builtins' environment. */
   environment?: Environment;
 }
@@ -204,6 +276,8 @@ export function flatten(ws: Workspace, rootUriIn: string, options: FlattenOption
   const rootUri = normalizeUri(rootUriIn);
   const body: string[] = [];
   const bodyMap: (LineOrigin | undefined)[] = [];
+  /** Lines outside every #if branch: only those decide whether the unit is Vulkan GLSL. */
+  const unconditionalLines: string[] = [];
   const files: string[] = [];
   /** Files on the current include stack (cycles). */
   const stack = new Set<string>();
@@ -216,9 +290,10 @@ export function flatten(ws: Workspace, rootUriIn: string, options: FlattenOption
   let keyboard = false;
   const unclosed: LineOrigin[] = [];
 
-  const emit = (text: string, origin: LineOrigin) => {
+  const emit = (text: string, origin: LineOrigin, depth = 1) => {
     body.push(text);
     bodyMap.push(origin);
+    if (depth === 0) unconditionalLines.push(text);
   };
 
   const visit = (uri: string, via: RootInclude | undefined, depth: number, condDepth: number) => {
@@ -284,7 +359,7 @@ export function flatten(ws: Workspace, rootUriIn: string, options: FlattenOption
       if (unclosedLines.has(i)) unclosed.push(origin);
       const rep = replace.get(i);
       if (blank.has(i)) emit('', origin);
-      else if (rep === undefined) emit(lines[i], origin);
+      else if (rep === undefined) emit(lines[i], origin, condDepth + lineDepth[i]);
       else if (typeof rep === 'string') emit(rep, origin);
       else {
         const target = rep.include.resolvedUri;
@@ -321,19 +396,26 @@ export function flatten(ws: Workspace, rootUriIn: string, options: FlattenOption
   // Names the unit declares itself: the environment must not redeclare them.
   const env = options.environment ?? ws.builtins.environment;
   const declared = new Set<string>(declaredUniforms);
-  for (const f of files) for (const sym of ws.getModel(f)?.symbols ?? []) if (sym.name) declared.add(sym.name);
+  for (const f of files) {
+    const model = ws.getModel(f);
+    for (const sym of model?.symbols ?? []) if (sym.name) declared.add(sym.name);
+    // Fields of a block without an instance name are globals too (`uniform UBO { float uTime; };`).
+    for (const b of model?.blocks ?? []) if (!b.instanceName) for (const fld of b.fields) declared.add(fld.name);
+  }
   if (options.shadertoy) for (const n of SHADERTOY_PREAMBLE_NAMES) declared.add(n);
 
   if (!options.shadertoy) {
     const version = ws.getModel(rootUri)?.glslVersion;
-    const envLines = environmentLines(env, declared, { es: version?.profile === 'es' || version?.number === 100 });
+    // A Vulkan construct inside `#ifdef USE_VULKAN` says nothing about the branch glslang compiles.
+    const targetEnv = resolveTargetEnv(options.targetEnv ?? 'auto', stage, unconditionalLines.join('\n'));
+    const envLines = environmentLines(env, declared, { es: version?.profile === 'es' || version?.number === 100, vulkan: !!targetEnv });
     if (envLines.length) {
       // Right after the root's #version line (it must come first), else at the very top.
       const at = version ? bodyMap.findIndex((o) => o?.uri === rootUri && o.line === version.range.end.line) + 1 : 0;
       body.splice(at, 0, ...envLines);
       bodyMap.splice(at, 0, ...envLines.map(() => undefined));
     }
-    return { source: body.join('\n') + '\n', lineMap: bodyMap, stage, shadertoy: false, files, unclosedConditionals: unclosedIn(bodyMap) };
+    return { source: body.join('\n') + '\n', lineMap: bodyMap, stage, shadertoy: false, targetEnv, files, unclosedConditionals: unclosedIn(bodyMap) };
   }
   const preamble = [...buildPreamble({ keyboard, channelTypes }), ...environmentLines(env, declared, { es: true })];
   const lineMap: (LineOrigin | undefined)[] = [...preamble.map(() => undefined), ...bodyMap, ...EPILOGUE.map(() => undefined)];

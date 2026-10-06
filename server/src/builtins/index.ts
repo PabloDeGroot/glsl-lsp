@@ -22,6 +22,7 @@ import { builtinVariables } from './variables';
 import { BASIC_TYPES, invalidIdentifierReason, isKeyword, RESERVED_WORDS } from '../core/keywords';
 
 export * from './types';
+export * from './presets';
 
 /** A uniform the shader runtime provides (glslLsp.environment.uniforms). */
 export interface EnvironmentUniform {
