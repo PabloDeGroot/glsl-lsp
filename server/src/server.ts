@@ -14,7 +14,7 @@ import {
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { getBuiltins } from './builtins';
+import { Builtins, builtinData } from './builtins';
 import type { Logger, ServerContext } from './context';
 import { NodeFileSystem, normalizeUri, semanticTokensLegend, Workspace } from './core';
 import * as codeActions from './features/codeActions';
@@ -51,16 +51,32 @@ export const COMPLETION_TRIGGERS = ['.', '#', '"', '/', '<'];
 /** Custom request: re-scan the workspace (command glslLsp.reindex). */
 export const REINDEX_REQUEST = 'glslLsp/reindex';
 
+/**
+ * Custom notification from the client: facts about the editor that the
+ * settings do not carry. Also accepted in `initializationOptions`.
+ */
+export const CLIENT_ENVIRONMENT_NOTIFICATION = 'glslLsp/clientEnvironment';
+export interface ClientEnvironment {
+  /** The stevensona.shader-toy extension is installed (glslLsp.shadertoy.enable 'auto' then applies Shadertoy everywhere). */
+  shaderToyInstalled?: boolean;
+}
+
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const settings = new SettingsStore();
-const builtins = getBuiltins();
+// Own instance: setEnvironment adds the configured uniforms and defines to it.
+const builtins = new Builtins(builtinData);
 const workspace = new Workspace({ fs: new NodeFileSystem(), builtins });
 
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 let indexed = false;
 const indexedListeners = new Set<() => void>();
+const environmentListeners = new Set<(reason: 'settings' | 'client') => void>();
+
+function environmentChanged(reason: 'settings' | 'client') {
+  for (const l of environmentListeners) l(reason);
+}
 
 const log: Logger = {
   error: (m) => connection.console.error(m),
@@ -81,6 +97,10 @@ const ctx: ServerContext = {
   getModel: (uri) => workspace.getModel(uri),
   getDocument: (uri) => documents.get(uri),
   onModelChanged: (listener) => workspace.onDidChangeModel(listener),
+  onEnvironmentChanged: (listener) => {
+    environmentListeners.add(listener);
+    return { dispose: () => environmentListeners.delete(listener) };
+  },
   onIndexed: (listener) => {
     indexedListeners.add(listener);
     return { dispose: () => indexedListeners.delete(listener) };
@@ -98,6 +118,14 @@ function applySettings(s: Settings) {
     maxFiles: s.index.maxFiles,
     shadertoy: s.shadertoy.enable,
   });
+  builtins.setEnvironment(s.environment);
+}
+
+function applyClientEnvironment(env: ClientEnvironment | undefined): boolean {
+  if (typeof env?.shaderToyInstalled !== 'boolean' || env.shaderToyInstalled === workspace.shaderToyExtension) return false;
+  workspace.configure({ shaderToyExtension: env.shaderToyInstalled });
+  log.info(`shader-toy extension ${env.shaderToyInstalled ? 'installed' : 'not installed'}`);
+  return true;
 }
 
 async function pullSettings() {
@@ -138,9 +166,10 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
   const roots = params.workspaceFolders?.map((f) => f.uri) ?? (params.rootUri ? [params.rootUri] : []);
   workspace.configure({ roots });
-  const initSettings = (params.initializationOptions as { settings?: unknown } | undefined)?.settings;
-  if (initSettings) settings.update(initSettings);
+  const initOptions = params.initializationOptions as ({ settings?: unknown } & ClientEnvironment) | undefined;
+  if (initOptions?.settings) settings.update(initOptions.settings);
   applySettings(settings.get());
+  applyClientEnvironment(initOptions);
 
   return {
     capabilities: {
@@ -170,7 +199,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
       colorProvider: true,
       workspace: hasWorkspaceFolderCapability ? { workspaceFolders: { supported: true, changeNotifications: true } } : undefined,
     },
-    serverInfo: { name: 'glsl-lsp', version: '0.1.0' },
+    serverInfo: { name: 'glsl-lsp', version: '0.3.0' },
   };
 });
 
@@ -196,6 +225,12 @@ settings.onDidChange((s, prev) => {
   // A different exclude list or file cap changes what is indexed: re-index (drops files that are now excluded).
   const indexChanged = s.index.maxFiles !== prev.index.maxFiles || JSON.stringify(s.index.exclude) !== JSON.stringify(prev.index.exclude);
   if (indexed && indexChanged) void indexWorkspace();
+  const envChanged = s.shadertoy.enable !== prev.shadertoy.enable || JSON.stringify(s.environment) !== JSON.stringify(prev.environment);
+  if (envChanged) environmentChanged('settings');
+});
+
+connection.onNotification(CLIENT_ENVIRONMENT_NOTIFICATION, (env: ClientEnvironment) => {
+  if (applyClientEnvironment(env)) environmentChanged('client');
 });
 
 connection.onDidChangeConfiguration(async (change) => {

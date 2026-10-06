@@ -31,6 +31,14 @@ export interface ServerContext {
   getDocument(uri: string): TextDocument | undefined;
   /** Fires after a model was (re)parsed or removed; `affected` includes every includer. */
   onModelChanged(listener: (e: ModelChangeEvent) => void): { dispose(): void };
+  /**
+   * Fires after what the shader environment provides changed: the
+   * glslLsp.environment / glslLsp.shadertoy settings ('settings'), or the
+   * client reported the shader-toy extension being installed or removed
+   * ('client'). Results that depend on builtins (semantic tokens,
+   * diagnostics) should be refreshed.
+   */
+  onEnvironmentChanged(listener: (reason: 'settings' | 'client') => void): { dispose(): void };
   /** Fires once the initial workspace index is complete. */
   onIndexed(listener: () => void): { dispose(): void };
   /** True once the initial workspace index is complete. */

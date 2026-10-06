@@ -531,7 +531,11 @@ export function typeOfOccurrence(ws: Workspace, model: FileModel, index: number,
   if (res.kind === 'symbol') return symbolType(res.primary);
   if (res.kind === 'builtin') {
     const e = res.entry;
-    if (e.kind === 'variable') return { name: e.type };
+    if (e.kind === 'variable') {
+      // Builtin types are written `vec3[4]`: split the array suffix like a declaration's TypeRef.
+      const arr = /^(\w+)\s*(\[[^\]]*\])$/.exec(e.type);
+      return arr ? { name: arr[1], array: arr[2] } : { name: e.type };
+    }
     if (e.kind === 'function' && e.overloads.length) {
       const o = pickBuiltinOverload(ws, model, e.overloads, res.call, depth + 1);
       const name = concreteBuiltinReturn(ws, model, o, res.call, depth + 1);
@@ -598,7 +602,8 @@ export function resolveOccurrence(ws: Workspace, model: FileModel, index: number
   if (found.symbols.length) {
     return { kind: 'symbol', name: occ.name, symbols: found.symbols, primary: pickOverload(found.symbols, call), occurrence: occ, call };
   }
-  const entry = ws.builtins.get(occ.name, ws.builtinFilter());
+  // Shadertoy entries follow the file's mode; directive-gated ones (Key_A without #iKeyboard) still resolve.
+  const entry = ws.builtins.get(occ.name, { shadertoy: ws.shadertoyActive(model) });
   if (entry) return { kind: 'builtin', name: occ.name, entry, occurrence: occ, call };
   const fb = workspaceFallback(ws, model, occ.name, filter);
   if (fb.symbols.length) {

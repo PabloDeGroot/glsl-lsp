@@ -198,6 +198,11 @@ function checkUndeclared(ws: Workspace, model: FileModel, out: Diagnostic[], max
     for (const b of m.blocks) if (!b.instanceName) for (const f of b.fields) declared.add(f.name);
   }
   const uncertain = uncertainRegions(model);
+  // Shadertoy names count as declared where Shadertoy support applies, and under 'auto'
+  // in libraries too (one may use them before any Shadertoy shader includes it). A plain
+  // entry shader (it defines main()) is not a library: there they are undeclared.
+  const isEntry = model.functions.some((f) => f.name === 'main' && !f.isPrototype);
+  const shadertoyNames = ws.shadertoyMode !== 'off' && (ws.shadertoyActive(model) || !isEntry);
   let reported = 0;
 
   for (const occ of model.occurrences) {
@@ -207,7 +212,8 @@ function checkUndeclared(ws: Workspace, model: FileModel, out: Diagnostic[], max
     if (declared.has(name) || KNOWN_NAMES.has(name) || generated.has(name) || hasKnownPrefix(name) || isKeyword(name)) continue;
     if (inRegions(uncertain, occ.start)) continue;
     if (localsAt(model, occ.start).some((s) => s.name === name)) continue;
-    if (ws.builtins.get(name)) continue; // any builtin, even one hidden by a directive filter
+    // Any builtin, even one hidden by a directive filter.
+    if (ws.builtins.get(name, { shadertoy: shadertoyNames })) continue;
 
     const definedIn = ws.findDeclaringFiles(name);
     const isError = definedIn.length > 0;

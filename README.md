@@ -1,9 +1,10 @@
 # GLSL Language Server
 
-A modern language server and VS Code extension for GLSL. It is built for
-Shadertoy-style shaders and for large include-based libraries such as
-[LYGIA](https://lygia.xyz), but it works on plain `.vert` / `.frag` / `.comp`
-files too.
+A modern language server and VS Code extension for GLSL: plain `.vert` /
+`.frag` / `.comp` shaders, large include-based libraries such as
+[LYGIA](https://lygia.xyz), and, optionally, Shadertoy-style shaders. Uniforms
+and macros your own runtime provides can be declared in the settings so they
+behave like builtins (see [Environment](#environment)).
 
 It ships as one extension: a small client (`dist/client.js`) that starts the
 bundled language server (`dist/server.js`), plus the **Values** side panel
@@ -74,10 +75,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   blank line. A comment directly above the first declaration is its doc
   comment and stays attached to it.
 - With an empty prefix (Ctrl+Space) up to 300 not-yet-included functions and
-  structs are listed, `lib/` first, then LYGIA's generative, math, color, sdf,
-  draw and space folders, then shorter paths. Typing narrows the full set.
+  structs are listed: files in a `lib/` folder (if you have one) first, then
+  LYGIA's generative, math, color, sdf, draw and space folders, then shorter
+  paths; test and fixture folders last. Typing narrows the full set.
 - If one of your own library files already includes the defining LYGIA file
-  (for example `lib/procedural.glsl` for `gnoise`), that library is offered
+  (for example a `lib/noise.glsl` that includes LYGIA's file defining `gnoise`), that library is offered
   first. Another shader's multipass `common.glsl` (only included by the shaders
   next to it) is never offered as such a library.
 - Nothing is offered where you are naming a new variable, parameter or field
@@ -103,7 +105,7 @@ The rest of completion is context aware:
 | --- | --- |
 | **Signature help** | Every overload, with the active parameter, per-parameter docs, struct and `vecN`/`matN` constructors, and function-like macros. The best overload is picked by argument count and types. |
 | **Inlay hints** | Parameter names on literal arguments, e.g. `smoothstep(edge0: 0.2, edge1: 0.8, d)`. |
-| **Go to definition / declaration / type definition** | Into `lib/` and LYGIA. The overload is picked by argument count and types. Ctrl+click on an `#include` path opens the file. |
+| **Go to definition / declaration / type definition** | Into included files and libraries such as LYGIA. The overload is picked by argument count and types. Ctrl+click on an `#include` path opens the file. |
 | **References, document highlight, rename** | Scope-aware (locals never leak, `float d = d * 2.0;` reads the outer `d`) and across included files, including overloads split between a library and its includer. Rename refuses builtins, keywords, reserved words (`class`, `input`, `gl_*`, `a__b`) and symbols declared in read-only folders (`glslLsp.rename.readOnlyPaths`, LYGIA by default), and says why. |
 | **Document / workspace symbols** | Outline with struct fields; fuzzy workspace search (Ctrl+T) over every function, struct and macro. |
 | **Diagnostics** | See the next section. |
@@ -126,9 +128,12 @@ Diagnostics come in two layers:
      are warnings.
 2. **`glslangValidator`** runs when a shader is opened or saved, and while you
    type (debounced) when `diagnostics.onType` is on.
-   - Shadertoy-style files are wrapped in the shader-toy extension's WebGL2
-     preamble (uniforms, `iChannel0-3` with their `#iChannel` types,
-     `#iKeyboard` helpers, `#iUniform`s) and a generated `main()`.
+   - Shadertoy-style files (where [Shadertoy support](#shadertoy-integration-optional)
+     applies) are wrapped in the shader-toy extension's WebGL2 preamble
+     (uniforms, `iChannel0-3` with their `#iChannel` types, `#iKeyboard`
+     helpers, `#iUniform`s) and a generated `main()`.
+   - The [environment](#environment) uniforms and defines are declared too:
+     after the Shadertoy preamble, or right after `#version` in plain GLSL.
    - Includes are inlined. Errors inside an included file are reported on that
      file, plus a summary on the `#include` line.
    - Library files without `main`/`mainImage` are checked through the shaders
@@ -140,7 +145,8 @@ The **GLSL** icon in the Activity Bar opens the **Values** panel: interactive
 widgets for the numbers in your shader, in the spirit of
 [glslEditor](https://github.com/patriciogonzalezvivo/glslEditor). Dragging a
 widget rewrites the literal in the document live (about 30 times a second),
-so the shader-toy preview updates as you drag. Each drag is **one undo step**.
+so a live preview (such as shader-toy's) updates as you drag. Each drag is
+**one undo step**.
 
 The panel has two parts.
 
@@ -232,8 +238,10 @@ says so; open the **GLSL** view to see it.
 | `glslLsp.rename.readOnlyPaths` | `["lygia"]` | Folders a rename never edits. Renaming a symbol declared there is refused. A bare name matches anywhere; an entry containing `/` matches a path relative to the workspace folder. Files outside the workspace folders are read-only unless open. |
 | `glslLsp.inlayHints.parameterNames` | `literals` | `none`, `literals` (hint literal arguments only) or `all`. |
 | `glslLsp.colors.mode` | `heuristic` | `heuristic` (literals that look like colors), `all` (every `vec3`/`vec4` literal in [0, 1]) or `off`. |
-| `glslLsp.shadertoy.enable` | `true` | Shadertoy uniforms, `mainImage` and the shader-toy directives. |
-| `glslLsp.index.exclude` | `["node_modules", ".git", "out", "dist", ".vscode-test"]` | Folders skipped when indexing. A bare name matches anywhere; an entry containing `/` (e.g. `glsl-lsp/test/fixtures`) matches a path relative to the workspace folder. Changing it re-indexes. Files in skipped folders are still loaded when something includes them. |
+| `glslLsp.shadertoy.enable` | `auto` | Where Shadertoy support applies: `auto`, `on` or `off` (legacy `true`/`false` mean `on`/`off`). See [Shadertoy integration](#shadertoy-integration-optional). |
+| `glslLsp.environment.uniforms` | `[]` | Uniforms your runtime provides: `{ name, type, doc? }`. See [Environment](#environment). |
+| `glslLsp.environment.defines` | `{}` | Macros your runtime defines: `{ "NAME": "value" }`. See [Environment](#environment). |
+| `glslLsp.index.exclude` | `["node_modules", ".git", "out", "dist", ".vscode-test"]` | Folders skipped when indexing. A bare name matches anywhere; an entry containing `/` (e.g. `vendor/old`) matches a path relative to the workspace folder. Changing it re-indexes. Files in skipped folders are still loaded when something includes them. |
 | `glslLsp.index.maxFiles` | `10000` | Maximum number of indexed files per workspace folder. |
 | `glslLsp.values.throttleMs` | `33` | Minimum milliseconds between document edits while dragging a Values widget (33 ms is about 30 per second). Raise it if the live preview stutters. |
 | `glslLsp.values.maxDecimals` | `4` | Maximum decimals written by the Values panel. Trailing zeros are trimmed. A literal that already has more decimals keeps its precision, and a value too small for the limit is written with an exponent (`1e-5`) rather than rounded to `0.0`. |
@@ -242,34 +250,92 @@ says so; open the **GLSL** view to see it.
 
 Commands: **GLSL: Restart Language Server**, **GLSL: Show Language Server
 Output**, **GLSL: Re-index Workspace**, **GLSL: Pin Value at Cursor**,
-**GLSL: Unpin All Values**, **GLSL: Focus Values Panel** and the four nudge
-commands (see [Values panel](#values-panel-sliders-color-and-vector-pickers)).
+**GLSL: Unpin All Values**, **GLSL: Focus Values Panel**, the four nudge
+commands (see [Values panel](#values-panel-sliders-color-and-vector-pickers))
+and **GLSL: Show Shadertoy Preview** (only when the shader-toy extension is
+installed).
 
 > A folder that contains a file named `.glsl-lsp-ignore` is never indexed.
-> This repository's `test/fixtures/` has one, so its fixtures do not show up as
-> completion candidates when the repository sits inside a shader workspace (as
-> a submodule). Add the marker to any folder of GLSL files you want ignored.
+> Add the marker to any folder of GLSL files you want ignored (vendored copies,
+> old experiments, test data).
 >
 > Recognized file extensions: `.glsl`, `.frag`, `.vert`, `.comp`, `.geom`,
 > `.tesc`, `.tese`. `.fs`/`.vs` are not claimed (they are F# and other
 > languages too); map them with `files.associations` if they are shaders in
 > your project.
 
+## Shadertoy integration (optional)
+
+Shadertoy support covers the Shadertoy uniforms (`iTime`, `iResolution`,
+`iMouse`, `iChannel0-3`, ...) and entry points (`mainImage`, `mainSound`,
+`mainVR`), the directives of the
+[shader-toy](https://marketplace.visualstudio.com/items?itemName=stevensona.shader-toy)
+extension (`#iChannelN`, `#iUniform`, `#iKeyboard` with its `isKeyDown` /
+`Key_*` helpers, the `iMouseButton` uniform) and validating `mainImage`
+shaders inside a generated `main()`. `glslLsp.shadertoy.enable` decides where
+it applies:
+
+| Value | Shadertoy support for |
+| --- | --- |
+| `auto` (default) | Files that define `mainImage` or use a shader-toy directive, plus the files they include and the files including them. Every GLSL file when the shader-toy extension is installed. Elsewhere, a library may still use Shadertoy names without a report (a Shadertoy shader may include it later), but a plain entry shader that defines `main()` gets them reported as undeclared. |
+| `on` | Every GLSL file. |
+| `off` | No file: plain GLSL only. `mainImage` files are validated as ordinary GLSL (no generated `main`), and Shadertoy names are reported as undeclared. |
+
+The shader-toy extension itself is **not required**: nothing depends on it,
+and everything above works without it. When it is installed, this extension
+adds **GLSL: Show Shadertoy Preview** to the command palette and a preview
+button to the editor title bar of GLSL files. Both run the shader-toy
+extension's own *Show GLSL Preview* command; they are hidden when the
+extension is not installed. This extension never renders anything itself.
+You may want to turn off `shader-toy.showCompileErrorsAsDiagnostics` if both
+report the same compile errors.
+
+## Environment
+
+Shaders often run in a host that provides more than GLSL: a custom player,
+a game engine, a live-coding tool. Declare what it provides and the names
+behave like builtins: hover (signature and your Markdown doc, labelled
+*Environment uniform* / *Environment define*), completion, semantic
+highlighting, typing of members and indexes (`trail[0].xy`), no
+undeclared-identifier report, and declarations for `glslangValidator`.
+
+```jsonc
+// .vscode/settings.json of a project whose runtime adds a cursor trail and a light count
+{
+  "glslLsp.environment.uniforms": [
+    { "name": "iCursorTrail", "type": "vec2[8]", "doc": "The last 8 cursor positions in pixels, newest first." },
+    { "name": "iAudioLevel", "type": "float", "doc": "Smoothed audio input level in `[0, 1]`." }
+  ],
+  "glslLsp.environment.defines": {
+    "MY_RUNTIME": "",
+    "MAX_LIGHTS": "8"
+  }
+}
+```
+
+- `type` is a builtin GLSL type (`float`, `vec4`, `mat3`, `sampler2D`, ...);
+  arrays are written `type[size]` (`vec4[16]`).
+- Invalid entries are ignored: names that are not valid identifiers (keywords,
+  reserved words, `gl_` / `__` names), unknown types, duplicates. Define
+  values are kept on one line and lose a trailing `\`.
+- A uniform or define the shader declares itself wins: the environment's
+  copy is not passed to `glslangValidator`, so there is no redefinition error.
+  A uniform named like a Shadertoy builtin replaces that builtin.
+- With Shadertoy support the declarations follow the Shadertoy preamble; in
+  plain GLSL they go right after `#version` (`highp` in GLSL ES).
+- Changes apply immediately: diagnostics and highlighting refresh without a
+  restart.
+
 ## Relation to other extensions
 
-- **[shader-toy](https://marketplace.visualstudio.com/items?itemName=stevensona.shader-toy)**
-  (stevensona) renders the preview. This extension understands its
-  directives (`#include`, `#iChannelN`, `#iUniform`, `#iKeyboard`) and uniforms
-  but does not render anything. The two work side by side. You may want to
-  turn off `shader-toy.showCompileErrorsAsDiagnostics` if both report the
-  same compile errors.
-- **Wallpaper Kit** (the sibling `extension/` folder of the shader
-  workspace) runs shaders in the wallpaper engine. It also contributes the
-  `glsl` language id and a grammar. Several extensions contributing the same
-  language id is normal in VS Code: they are merged. The language server works
-  with either grammar. If the highlighting looks different from what you
-  expect, the last grammar registered wins; disable the other extension's
-  grammar or this one's as you prefer.
+- **shader-toy** (stevensona): see
+  [Shadertoy integration](#shadertoy-integration-optional).
+- **Other GLSL extensions** may also contribute the `glsl` language id and a
+  grammar. Several extensions contributing the same language id is normal in
+  VS Code: they are merged, and this language server works with either
+  grammar. If the highlighting looks different from what you expect, the last
+  grammar registered wins; disable the other extension's grammar or this
+  one's as you prefer.
 
 ## Install
 
@@ -278,7 +344,7 @@ From source:
 ```sh
 npm install
 npm run package                      # builds (minified) and writes glsl-lsp-<version>.vsix
-code --install-extension glsl-lsp-0.2.0.vsix
+code --install-extension glsl-lsp-0.3.0.vsix
 ```
 
 `glslangValidator` is optional. Install it from the Vulkan SDK or MSYS2's
@@ -290,12 +356,22 @@ code --install-extension glsl-lsp-0.2.0.vsix
 npm install
 npm run watch        # rebuild dist/ on change
 npm run typecheck
-npm test             # unit tests + real-workspace tests (skipped when ../lygia is absent)
+npm test             # unit tests + real-workspace tests (skipped without a shader workspace)
 npm run test:e2e     # just the end-to-end test: spawns dist/server.js over stdio
 ```
 
+The real-workspace tests run against a real shader workspace, e.g. one with
+LYGIA: the folder in `GLSL_LSP_E2E_ROOT` (an error if it does not exist), or
+this repository's parent folder. Either is used only when it looks like a
+shader workspace (a `lygia/` folder, or `.glsl` files at the top or one folder
+down); otherwise those tests are skipped. They never modify it.
+
+`test/fixtures/` holds a `.glsl-lsp-ignore` marker, so when this repository
+is cloned inside a shader workspace its fixtures do not show up as completion
+candidates there.
+
 Press F5 in VS Code (**Run Extension**) to start an Extension Development
-Host on the parent folder. Use the **Extension + Server** compound
+Host on `test/fixtures/project`. Use the **Extension + Server** compound
 configuration to also attach a debugger to the server (port 6009).
 
 The Values panel UI can be checked without VS Code: run `npm run build`, then

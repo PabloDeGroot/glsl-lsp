@@ -28,8 +28,20 @@ export interface WorkspaceOptions {
    */
   exclude?: string[];
   maxFiles?: number;
-  /** Shadertoy builtins visible. */
-  shadertoy?: boolean;
+  /**
+   * Where Shadertoy support (builtins, shader-toy directives, the mainImage
+   * wrapper) applies: 'auto' (default) per file, 'on' everywhere, 'off'
+   * nowhere. Booleans are the legacy form (true = 'on', false = 'off').
+   */
+  shadertoy?: ShadertoyMode | boolean;
+  /** The client has the shader-toy extension installed ('auto' then treats every file as Shadertoy). */
+  shaderToyExtension?: boolean;
+}
+
+export type ShadertoyMode = 'auto' | 'on' | 'off';
+
+function toMode(v: ShadertoyMode | boolean): ShadertoyMode {
+  return v === true ? 'on' : v === false ? 'off' : v;
 }
 
 export interface ModelChangeEvent {
@@ -63,7 +75,8 @@ export class Workspace {
   private roots: string[];
   private exclude: Set<string>;
   private maxFiles: number;
-  shadertoy: boolean;
+  shadertoyMode: ShadertoyMode;
+  shaderToyExtension: boolean;
 
   private readonly models = new Map<string, FileModel>();
   private readonly openUris = new Set<string>();
@@ -72,6 +85,8 @@ export class Workspace {
   private readonly listeners = new Set<(e: ModelChangeEvent) => void>();
   /** URIs that failed to load (avoid retrying on every lookup). */
   private readonly missing = new Set<string>();
+  /** shadertoyActive per URI under 'auto'; cleared whenever a model or an include edge changes. */
+  private readonly toyCache = new Map<string, boolean>();
   /** Lower-cased URI -> model key, on case-insensitive file systems. */
   private readonly lowerKeys = new Map<string, string>();
 
@@ -81,7 +96,8 @@ export class Workspace {
     this.roots = (options.roots ?? []).map(normalizeUri);
     this.exclude = new Set(options.exclude ?? DEFAULT_EXCLUDE);
     this.maxFiles = options.maxFiles ?? 10000;
-    this.shadertoy = options.shadertoy ?? true;
+    this.shadertoyMode = toMode(options.shadertoy ?? 'auto');
+    this.shaderToyExtension = options.shaderToyExtension ?? false;
     this.resolver = new IncludeResolver({
       fs: this.fs,
       roots: this.roots,
@@ -92,11 +108,13 @@ export class Workspace {
 
   // ------------------------------------------------------------ configuration
 
-  configure(options: Partial<Pick<WorkspaceOptions, 'roots' | 'includePaths' | 'exclude' | 'maxFiles' | 'shadertoy'>>) {
+  configure(options: Partial<Pick<WorkspaceOptions, 'roots' | 'includePaths' | 'exclude' | 'maxFiles' | 'shadertoy' | 'shaderToyExtension'>>) {
     if (options.roots) this.roots = options.roots.map(normalizeUri);
     if (options.exclude) this.exclude = new Set(options.exclude);
     if (options.maxFiles !== undefined) this.maxFiles = options.maxFiles;
-    if (options.shadertoy !== undefined) this.shadertoy = options.shadertoy;
+    if (options.shadertoy !== undefined) this.shadertoyMode = toMode(options.shadertoy);
+    this.toyCache.clear();
+    if (options.shaderToyExtension !== undefined) this.shaderToyExtension = options.shaderToyExtension;
     if (options.roots || options.includePaths) {
       this.resolver.update({ roots: this.roots, ...(options.includePaths ? { includePaths: options.includePaths } : {}) });
       this.missing.clear();
@@ -108,6 +126,28 @@ export class Workspace {
     return this.roots;
   }
 
+  /**
+   * True when Shadertoy support applies to `model`: always with 'on', never
+   * with 'off'; with 'auto' when the shader-toy extension is installed, or
+   * when the file, a file it includes or a file including it defines
+   * `mainImage` or uses a shader-toy directive. Without a model: anything
+   * but 'off'.
+   */
+  shadertoyActive(model?: FileModel): boolean {
+    if (this.shadertoyMode !== 'auto') return this.shadertoyMode === 'on';
+    if (this.shaderToyExtension || !model) return true;
+    const isToy = (m: FileModel | undefined) => !!m && (m.shadertoy.hasMainImage || m.shadertoy.directives);
+    if (isToy(model)) return true;
+    // Open buffers may carry a model newer than the indexed one: cache only by URI of indexed models.
+    const cached = this.models.get(model.uri) === model ? this.toyCache.get(model.uri) : undefined;
+    if (cached !== undefined) return cached;
+    let result = false;
+    for (const u of this.graph.closure(model.uri)) if (u !== model.uri && isToy(this.models.get(u))) result = true;
+    if (!result) for (const u of this.graph.includers(model.uri)) if (isToy(this.models.get(u))) result = true;
+    if (this.models.get(model.uri) === model) this.toyCache.set(model.uri, result);
+    return result;
+  }
+
   /** Filter for builtins according to settings and the file's directives. */
   builtinFilter(model?: FileModel): BuiltinFilter {
     const directives = new Set<string>();
@@ -115,7 +155,7 @@ export class Workspace {
       if (model.shadertoy.keyboard) directives.add('iKeyboard');
       for (const u of this.graph.closure(model.uri)) if (this.models.get(u)?.shadertoy.keyboard) directives.add('iKeyboard');
     }
-    return { shadertoy: this.shadertoy, directives: model ? directives : undefined };
+    return { shadertoy: this.shadertoyActive(model), directives: model ? directives : undefined };
   }
 
   // ------------------------------------------------------------ indexing
@@ -313,6 +353,7 @@ export class Workspace {
     const old = this.models.get(uri);
     if (old) this.removeGlobals(old);
     this.models.set(uri, model);
+    this.toyCache.clear();
     if (this.fs.caseInsensitive) this.lowerKeys.set(uri.toLowerCase(), uri);
     this.missing.delete(uri);
     this.addGlobals(model);
@@ -326,6 +367,7 @@ export class Workspace {
     if (!old) return;
     this.removeGlobals(old);
     this.models.delete(uri);
+    this.toyCache.clear();
     if (this.lowerKeys.get(uri.toLowerCase()) === uri) this.lowerKeys.delete(uri.toLowerCase());
     const affected = [uri, ...this.graph.includers(uri)];
     this.graph.remove(uri);
@@ -383,6 +425,7 @@ export class Workspace {
       if (inc.resolvedUri && inc.resolvedUri !== model.uri) targets.push(inc.resolvedUri);
     }
     this.graph.setEdges(model.uri, targets);
+    this.toyCache.clear();
   }
 
   /** Re-resolves every model's includes; returns the URIs whose include targets changed. */

@@ -1,6 +1,6 @@
-// Runs the detection over the user's real shaders (read-only test material
-// outside the repo). Skipped when the files are not there.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+// Runs the Values detection over a real shader workspace (see
+// realWorkspace.ts; read-only test material, skipped without one).
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeValueTargets } from '../server/src/features/values/targets';
@@ -8,17 +8,15 @@ import type { ValueTarget } from '../shared/valuesProtocol';
 import { componentCount } from '../shared/valuesProtocol';
 import { makeEnv } from './valuesServerHelpers';
 import { uri } from './helpers';
+import { REAL_ROOT, realShaderFiles } from './realWorkspace';
 
-const SHADER_DIR = join(__dirname, '..', '..');
-const MAIN = join(SHADER_DIR, 'main.glsl');
-const have = existsSync(MAIN) && existsSync(join(SHADER_DIR, 'lib'));
-
+/** The workspace's own shaders (not LYGIA), capped so the exhaustive scans stay quick. */
 function load(): Record<string, string> {
-  const files: Record<string, string> = { 'main.glsl': readFileSync(MAIN, 'utf8') };
-  const lib = join(SHADER_DIR, 'lib');
-  for (const f of readdirSync(lib)) if (f.endsWith('.glsl')) files[`lib/${f}`] = readFileSync(join(lib, f), 'utf8');
+  const files: Record<string, string> = {};
+  for (const rel of realShaderFiles().slice(0, 12)) files[rel] = readFileSync(join(REAL_ROOT!, rel), 'utf8');
   return files;
 }
+const have = !!REAL_ROOT && realShaderFiles().length > 0;
 
 function slice(text: string, t: ValueTarget): string {
   const lines = text.split(/\r\n|\r|\n/);
@@ -46,23 +44,25 @@ function checkTarget(text: string, t: ValueTarget): void {
   expect(t.id).toBe(`${t.kind}:${t.range.start.line}:${t.range.start.character}`);
 }
 
-describe.skipIf(!have)('values: real shaders', () => {
+describe.skipIf(!have)('values: a real shader workspace', () => {
   const files = have ? load() : {};
   const { env } = makeEnv(files);
 
-  it('main.glsl: #iUniform defaults', () => {
-    const text = files['main.glsl'];
-    const lines = text.split(/\r\n|\r|\n/);
-    const line = (needle: string) => lines.findIndex((l) => l.includes(needle));
-    const at = (needle: string, inner: string) => {
-      const l = line(needle);
-      return computeValueTargets(env, { uri: uri('main.glsl'), position: { line: l, character: lines[l].indexOf(inner) + 1 } }).cursor!;
-    };
-    const speed = at('#iUniform float u_speed', '1.0');
-    expect(speed).toMatchObject({ kind: 'float', name: 'u_speed', declKind: 'iUniform', uniform: { min: 0, max: 4 } });
-    const tint = at('#iUniform color3 u_tint', 'color3(');
-    expect(tint).toMatchObject({ kind: 'vec3', name: 'u_tint', colorish: true, ctor: 'color3' });
-    expect(tint.components.map((c) => c.value)).toEqual([1, 0.78, 0.55]);
+  it('every #iUniform with a default value is a target of its declaration', () => {
+    let checked = 0;
+    for (const [path, text] of Object.entries(files)) {
+      const lines = text.split(/\r\n|\r|\n/);
+      lines.forEach((l, line) => {
+        const m = /^\s*#iUniform\s+(\w+)\s+(\w+)\s*=\s*([-\w.(]+)/.exec(l);
+        if (!m) return;
+        const at = l.indexOf(m[3], l.indexOf('=')) + 1;
+        const t = computeValueTargets(env, { uri: uri(path), position: { line, character: at } }).cursor;
+        if (!t) return; // e.g. an integer or texture uniform
+        expect(t, `${path}:${line + 1}`).toMatchObject({ name: m[2], declKind: 'iUniform' });
+        checked++;
+      });
+    }
+    if (!checked) console.log('values realworld: no #iUniform with a numeric default found');
   });
 
   it('every file: scanning every position never throws and targets are consistent', () => {
@@ -76,9 +76,11 @@ describe.skipIf(!have)('values: real shaders', () => {
           const t = res.cursor;
           if (!t) continue;
           found++;
-          checkTarget(text, t);
-          // the cursor target's own text is inside the document
-          expect(slice(text, t).length).toBeGreaterThan(0);
+          // A target may live in an included file (e.g. the #define a macro use expands to).
+          const targetText = files[t.uri.slice(uri('').length)] ?? text;
+          checkTarget(targetText, t);
+          // the cursor target's own text is inside its document
+          expect(slice(targetText, t).length).toBeGreaterThan(0);
         }
       }
     }
@@ -102,17 +104,6 @@ describe.skipIf(!have)('values: real shaders', () => {
       }
     }
     expect(checked).toBeGreaterThan(50);
-  });
-
-  it('lib/color.glsl contains a palette', () => {
-    const text = files['lib/color.glsl'];
-    const lines = text.split(/\r\n|\r|\n/);
-    const l = lines.findIndex((x) => x.includes('palette(t, vec3(0.5), vec3(0.5), vec3(1.0)'));
-    expect(l).toBeGreaterThanOrEqual(0);
-    const t = computeValueTargets(env, { uri: uri('lib/color.glsl'), position: { line: l, character: lines[l].indexOf('palette(t,') + 2 } }).cursor!;
-    expect(t.kind).toBe('palette');
-    expect(t.children!.map((c) => c.name)).toEqual(['a', 'b', 'c', 'd']);
-    expect(t.children![3].components.map((c) => c.value)).toEqual([0, 0.33, 0.67]);
   });
 
   it('is fast on every position of the largest file', () => {

@@ -1,8 +1,8 @@
 {
   "name": "glsl-lsp",
   "displayName": "GLSL Language Server",
-  "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting and more. Shadertoy and LYGIA aware.",
-  "version": "0.2.0",
+  "description": "A modern GLSL language server: doc-comment hovers, completion with automatic #include, go to definition, references, rename, signature help, inlay hints, semantic highlighting and more. Optional Shadertoy support, configurable runtime uniforms, LYGIA aware.",
+  "version": "0.3.0",
   "publisher": "pablodegroot",
   "license": "MIT",
   "author": "Pablo de Groot",
@@ -26,8 +26,12 @@
     "shader",
     "shadertoy",
     "lygia",
-    "language server"
+    "language server",
+    "glslang",
+    "opengl",
+    "webgl"
   ],
+  "icon": "media/icon.png",
   "main": "./dist/client.js",
   "activationEvents": [
     "onLanguage:glsl",
@@ -112,6 +116,12 @@
         "command": "glslLsp.nudgeDownLarge",
         "title": "Decrement Number at Cursor (x10)",
         "category": "GLSL"
+      },
+      {
+        "command": "glslLsp.showShadertoyPreview",
+        "title": "Show Shadertoy Preview",
+        "category": "GLSL",
+        "icon": "$(open-preview)"
       }
     ],
     "configuration": {
@@ -196,9 +206,56 @@
           "markdownDescription": "Which `vec3(...)` / `vec4(...)` literals get a color swatch and picker."
         },
         "glslLsp.shadertoy.enable": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Understand Shadertoy uniforms (`iTime`, `iResolution`, ...) and the shader-toy extension directives (`#iChannel`, `#iUniform`, `#iKeyboard`)."
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Per file: files that define `mainImage` or use a shader-toy directive (and the files they include or are included by) get Shadertoy support. Every file does when the shader-toy extension is installed.",
+            "Every GLSL file gets Shadertoy support.",
+            "Plain GLSL only. `mainImage` files are validated as ordinary GLSL (no generated `main`)."
+          ],
+          "default": "auto",
+          "markdownDescription": "Where Shadertoy support applies: the Shadertoy uniforms (`iTime`, `iResolution`, ...) and entry points, the [shader-toy extension](https://marketplace.visualstudio.com/items?itemName=stevensona.shader-toy) directives (`#iChannel`, `#iUniform`, `#iKeyboard`) and validating `mainImage` shaders inside a generated `main()`. The shader-toy extension itself is optional. The legacy values `true` and `false` still work and mean `on` and `off`."
+        },
+        "glslLsp.environment.uniforms": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "type"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "description": "Uniform name, e.g. iCursorTrail."
+              },
+              "type": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\[[1-9][0-9]*\\])?$",
+                "markdownDescription": "Builtin GLSL type (`float`, `vec3`, `mat4`, `sampler2D`, ...). Arrays are written `type[size]`, e.g. `vec4[16]`. Entries with an unknown type are ignored."
+              },
+              "doc": {
+                "type": "string",
+                "markdownDescription": "Markdown shown on hover and in completion."
+              }
+            },
+            "additionalProperties": false
+          },
+          "markdownDescription": "Uniforms your shader runtime provides beyond GLSL (and Shadertoy). They behave like builtins: hover, completion, highlighting, member and index typing, no undeclared-identifier report, and they are declared for `glslangValidator`. A file that declares the same name itself wins. Example: `[{ \"name\": \"iCursorTrail\", \"type\": \"vec2[8]\", \"doc\": \"Last 8 cursor positions in pixels.\" }]`."
+        },
+        "glslLsp.environment.defines": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Macros your shader runtime defines, as `{ \"NAME\": \"value\" }` (the value may be `\"\"`). They are known to hover, completion and the undeclared-identifier check, and are passed to `glslangValidator` as `#define NAME value`. Example: `{ \"MY_RUNTIME\": \"\", \"MAX_LIGHTS\": \"8\" }`."
         },
         "glslLsp.index.exclude": {
           "type": "array",
@@ -212,7 +269,7 @@
             "dist",
             ".vscode-test"
           ],
-          "markdownDescription": "Folders skipped when indexing. A bare name (`node_modules`) matches that folder anywhere; an entry containing `/` (`glsl-lsp/test/fixtures`) matches a path relative to the workspace folder, or the end of one. A folder containing a `.glsl-lsp-ignore` file is always skipped. Files in skipped folders are still loaded when something includes them."
+          "markdownDescription": "Folders skipped when indexing. A bare name (`node_modules`) matches that folder anywhere; an entry containing `/` (`vendor/old`) matches a path relative to the workspace folder, or the end of one. A folder containing a `.glsl-lsp-ignore` file is always skipped. Files in skipped folders are still loaded when something includes them."
         },
         "glslLsp.index.maxFiles": {
           "type": "number",
@@ -304,6 +361,13 @@
           "group": "1_glsl@1"
         }
       ],
+      "editor/title": [
+        {
+          "command": "glslLsp.showShadertoyPreview",
+          "when": "glslLsp.shaderToyInstalled && editorLangId == glsl",
+          "group": "navigation"
+        }
+      ],
       "view/title": [
         {
           "command": "glslLsp.pinValue",
@@ -336,6 +400,10 @@
         {
           "command": "glslLsp.nudgeDownLarge",
           "when": "editorLangId == glsl"
+        },
+        {
+          "command": "glslLsp.showShadertoyPreview",
+          "when": "glslLsp.shaderToyInstalled && editorLangId == glsl"
         }
       ]
     }

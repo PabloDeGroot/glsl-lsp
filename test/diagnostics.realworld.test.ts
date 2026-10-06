@@ -1,55 +1,50 @@
-// Runs the diagnostics against the user's real shaders (parent workspace) and
-// checks the fast checks do not report anything on code known to compile.
-import { existsSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+// Runs the diagnostics against a real shader workspace (see realWorkspace.ts;
+// skipped without one) and checks that code that compiles gets no reports.
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getBuiltins } from '../server/src/builtins';
 import { fsPathToUri, NodeFileSystem, Workspace } from '../server/src/core';
-import { spawnSync } from 'node:child_process';
 import { computeFastDiagnostics, computeGlslangDiagnostics, runGlslang } from '../server/src/features/diagnostics';
-
-const PARENT = resolve(__dirname, '..', '..');
-const HAS_PARENT = existsSync(resolve(PARENT, 'lygia')) && existsSync(resolve(PARENT, 'lib', 'common.glsl'));
+import { REAL_EXCLUDE, REAL_ROOT, isEntryShader, realShaderFiles } from './realWorkspace';
 
 const GLSLANG = spawnSync('glslangValidator', ['--version']).status === 0;
+const FILES = realShaderFiles();
 
-describe.skipIf(!HAS_PARENT)('diagnostics on the real shaders', () => {
-  it.skipIf(!GLSLANG)('glslang accepts every user shader that has mainImage', async () => {
-    const ws = new Workspace({ fs: new NodeFileSystem(), builtins: getBuiltins(), roots: [fsPathToUri(PARENT)], exclude: ['node_modules', '.git', 'out', 'dist', 'glsl-lsp', 'lygia', 'extension'] });
-    ws.indexWorkspaceSync();
+function indexReal(): Workspace {
+  const ws = new Workspace({ fs: new NodeFileSystem(), builtins: getBuiltins(), roots: [fsPathToUri(REAL_ROOT!)], exclude: REAL_EXCLUDE });
+  ws.indexWorkspaceSync();
+  return ws;
+}
+
+describe.skipIf(!REAL_ROOT || !FILES.length)('diagnostics on a real shader workspace', () => {
+  it.skipIf(!GLSLANG)('glslangValidator accepts every entry shader whose includes resolve', async () => {
+    const ws = indexReal();
     const out: string[] = [];
-    for (const dir of ['.', 'eyes-curl', 'eyes-fluid', 'eyes-network', 'glass', 'tiles']) {
-      const full = resolve(PARENT, dir);
-      if (!existsSync(full)) continue;
-      for (const f of readdirSync(full).filter((n) => n.endsWith('.glsl'))) {
-        const uri = fsPathToUri(resolve(full, f));
-        const res = await computeGlslangDiagnostics(ws, uri, { shadertoy: true, run: (s, st) => runGlslang(s, { exe: 'glslangValidator', stage: st }) });
-        if (res.kind === 'done') {
-          for (const [u, ds] of res.byUri) for (const d of ds) out.push(`${dir}/${f} -> ${u.split('/').slice(-2).join('/')}:${d.range.start.line + 1} ${d.message}`);
-        } else out.push(`${dir}/${f}: ${res.kind}`);
-      }
+    for (const rel of FILES) {
+      if (!isEntryShader(readFileSync(join(REAL_ROOT!, rel), 'utf8'))) continue;
+      const uri = fsPathToUri(join(REAL_ROOT!, rel));
+      // A missing include target is a real problem of the shader, reported as such: not this test's concern.
+      if (computeFastDiagnostics(ws, uri).some((d) => d.code === 'unresolved-include')) continue;
+      const res = await computeGlslangDiagnostics(ws, uri, { run: (s, st) => runGlslang(s, { exe: 'glslangValidator', stage: st }) });
+      if (res.kind === 'done') {
+        for (const [u, ds] of res.byUri) for (const d of ds) out.push(`${rel} -> ${u.split('/').slice(-2).join('/')}:${d.range.start.line + 1} ${d.message}`);
+      } else out.push(`${rel}: ${res.kind}`);
     }
     if (out.length) console.log(out.join('\n'));
-    // Library-like buffers without mainImage (eyes-fluid/common.glsl) are skipped, never reported.
+    // Buffers without an entry point of their own are skipped, never reported.
     expect(out.filter((l) => !l.endsWith(': skipped'))).toEqual([]);
   });
 
-  it('reports nothing on the user shaders and libraries', () => {
-    const ws = new Workspace({ fs: new NodeFileSystem(), builtins: getBuiltins(), roots: [fsPathToUri(PARENT)], exclude: ['node_modules', '.git', 'out', 'dist', 'glsl-lsp', 'lygia', 'extension'] });
-    ws.indexWorkspaceSync();
-    const targets: string[] = [];
-    for (const dir of ['.', 'lib', 'eyes-curl', 'eyes-fluid', 'eyes-network', 'glass', 'tiles']) {
-      const full = resolve(PARENT, dir);
-      if (!existsSync(full)) continue;
-      for (const f of readdirSync(full)) if (f.endsWith('.glsl')) targets.push(resolve(full, f));
-    }
-    expect(targets.length).toBeGreaterThan(5);
+  it('the fast checks report nothing on its shaders and libraries', () => {
+    const ws = indexReal();
     const report: string[] = [];
-    for (const t of targets) {
+    for (const rel of FILES) {
       const t0 = performance.now();
-      const diags = computeFastDiagnostics(ws, fsPathToUri(t));
+      const diags = computeFastDiagnostics(ws, fsPathToUri(join(REAL_ROOT!, rel)));
       const ms = performance.now() - t0;
-      for (const d of diags.filter((x) => x.code !== 'unresolved-include')) report.push(`${t.slice(PARENT.length)}:${d.range.start.line + 1} [${d.code}] ${d.message}`);
+      for (const d of diags.filter((x) => x.code !== 'unresolved-include')) report.push(`${rel}:${d.range.start.line + 1} [${d.code}] ${d.message}`);
       expect(ms).toBeLessThan(500);
     }
     if (report.length) console.log(report.join('\n'));

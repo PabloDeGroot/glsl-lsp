@@ -1,17 +1,18 @@
-// Review regressions reproduced on the user's real shaders (read-only test
-// material outside the repo). Skipped when the files are not there.
-import { existsSync, readFileSync } from 'node:fs';
+// Review regressions first reproduced on the files of a real shader workspace
+// (see realWorkspace.ts; read-only test material). Each check runs only when
+// that workspace has the file and the code it looks for.
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeValueTargets } from '../server/src/features/values/targets';
 import type { PinAnchor } from '../shared/valuesProtocol';
 import { uri } from './helpers';
 import { makeEnv } from './valuesServerHelpers';
+import { REAL_ROOT, realHas } from './realWorkspace';
 
-const ROOT = join(__dirname, '..', '..');
-const FILES = ['lib/color.glsl', 'lib/procedural.glsl', 'cubemap.glsl', 'channels.glsl'];
-const have = FILES.every((f) => existsSync(join(ROOT, f)));
-const read = (f: string) => readFileSync(join(ROOT, f), 'utf8').replace(/\r\n?/g, '\n');
+const read = (f: string) => readFileSync(join(REAL_ROOT!, f), 'utf8').replace(/\r\n?/g, '\n');
+/** The file exists and contains every needle. */
+const has = (f: string, ...needles: string[]) => realHas(f) && needles.every((n) => read(f).includes(n));
 
 function cursorAt(file: string, text: string, needle: string, inner: string) {
   const lines = text.split('\n');
@@ -31,8 +32,8 @@ function insertAfter(text: string, needle: string, insert: string): string {
   return text.slice(0, eol + 1) + insert + text.slice(eol + 1);
 }
 
-describe.skipIf(!have)('values review regressions on real shaders', () => {
-  it('lib/color.glsl: turbo LUT stop is a color, named lut[i], and an edit above keeps the pin on it', () => {
+describe.skipIf(!REAL_ROOT)('values review regressions on a real shader workspace', () => {
+  it.skipIf(!has('lib/color.glsl', 'vec3(0.9290, 0.8173, 0.2261)', 'vec3 turbo(float t) {'))('lib/color.glsl: turbo LUT stop is a color, named lut[i], and an edit above keeps the pin on it', () => {
     const text = read('lib/color.glsl');
     const t = cursorAt('lib/color.glsl', text, 'vec3(0.9290, 0.8173, 0.2261)', '0.9290');
     expect(t.kind).toBe('vec3');
@@ -42,11 +43,11 @@ describe.skipIf(!have)('values review regressions on real shaders', () => {
     const r = resolveIn('lib/color.glsl', edited, t.anchor);
     expect(r.target!.components.map((c) => c.text)).toEqual(['0.9290', '0.8173', '0.2261']);
   });
-  it('lib/color.glsl: the HSV argument of hsv2rgb is not offered as an RGB color', () => {
+  it.skipIf(!has('lib/color.glsl', 'hsv2rgb(vec3(t, 1.0, 1.0))'))('lib/color.glsl: the HSV argument of hsv2rgb is not offered as an RGB color', () => {
     const text = read('lib/color.glsl');
     expect(cursorAt('lib/color.glsl', text, 'hsv2rgb(vec3(t, 1.0, 1.0))', '1.0, 1.0)').colorish).toBe(false);
   });
-  it('lib/procedural.glsl: the sfbm multi stays in sfbm after a helper is inserted above it', () => {
+  it.skipIf(!has('lib/procedural.glsl', 'float sfbm(vec2 p'))('lib/procedural.glsl: the sfbm multi stays in sfbm after a helper is inserted above it', () => {
     const text = read('lib/procedural.glsl');
     const lines = text.split('\n');
     const line = lines.findIndex((l) => l.startsWith('float sfbm(vec2 p')) + 1;
@@ -59,12 +60,12 @@ describe.skipIf(!have)('values review regressions on real shaders', () => {
     expect(r.target!.functionName).toBe('sfbm');
     expect(r.target!.range.start.line).toBe(line + 16); // the helper is 16 lines
   });
-  it('cubemap.glsl: face colors picked by a ternary are colors; the sun direction is labelled', () => {
+  it.skipIf(!has('cubemap.glsl', 'vec3(0.95, 0.35, 0.35)', 'vec3 sun = normalize(vec3(0.34'))('cubemap.glsl: face colors picked by a ternary are colors; the sun direction is labelled', () => {
     const text = read('cubemap.glsl');
     expect(cursorAt('cubemap.glsl', text, 'vec3(0.95, 0.35, 0.35)', '0.95').colorish).toBe(true);
     expect(cursorAt('cubemap.glsl', text, 'vec3 sun = normalize(vec3(0.34', '0.34').name).toBe('sun · normalize');
   });
-  it('channels.glsl: a literal inside a locked vec2 argument is reachable', () => {
+  it.skipIf(!has('channels.glsl', '1.3 - t * 0.15'))('channels.glsl: a literal inside a locked vec2 argument is reachable', () => {
     const text = read('channels.glsl');
     const t = cursorAt('channels.glsl', text, '1.3 - t * 0.15', '0.15');
     expect(t.kind).toBe('float');

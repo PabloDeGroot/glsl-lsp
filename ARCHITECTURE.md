@@ -7,6 +7,7 @@ core results into LSP responses.
 
 ```
 client/src/extension.ts        LanguageClient, commands, file watcher
+client/src/shaderToy*.ts       optional shader-toy integration: installed check, context key, preview command
 client/src/values/             Values panel controller: view provider, cursor, pins, edits, nudge
 webview/src/                   Values panel UI (plain TS + DOM + canvas), bundled to dist/webview.js/.css
 shared/                        types and math shared by server, client and webview (no imports)
@@ -70,7 +71,7 @@ outside the roots (or in excluded folders) are loaded lazily by
 for edits of open buffers (diagnostics' `onType` gates just those);
 `namesChanged` is set when the file's set of top-level names changed.
 
-Indexing the parent shader workspace (about 680 files incl. all of LYGIA)
+Indexing a real shader workspace of about 680 files (incl. all of LYGIA)
 takes about 0.75 s; parsing is eager. The end-to-end test logs the current
 figure (server-reported and wall clock; the ceiling is 15 s, override with
 `GLSL_LSP_E2E_INDEX_MS`).
@@ -181,7 +182,8 @@ For a name used in file F at offset o:
    initializer), so `float d = d * 2.0;` reads the outer `d`,
 2. top-level symbols of F,
 3. top-level symbols of F's transitive includes,
-4. builtins (respecting `glslLsp.shadertoy.enable`),
+4. builtins, environment uniforms and defines included; Shadertoy entries
+   only where `ws.shadertoyActive(F)` (see below),
 5. fallback: any indexed file declaring the name, preferring files visible
    from F's includers (`fromWorkspace: true`). This keeps library files that
    rely on their includer's includes navigable, and lets hovers say
@@ -228,7 +230,8 @@ type Resolution =
 | `visibleSymbols(uri, pos)` | `{ locals, globals, blockFields, files }` |
 | `resolveSymbolAt(uri, pos)`, `resolveOccurrence(model, i)` | see above |
 | `findReferences(uri, pos, includeDeclaration)` | `{ uri, range, isDeclaration }[]` across files |
-| `builtinFilter(model?)` | filter for `builtins.allFunctions(filter)` etc. |
+| `shadertoyActive(model?)` | whether Shadertoy support applies to the file: `shadertoyMode` 'on'/'off', or under 'auto' the client's `shaderToyExtension` flag, else `mainImage` / shader-toy directives (`model.shadertoy.directives`) in the file, its includes or its includers (cached per URI) |
+| `builtinFilter(model?)` | filter for `builtins.allFunctions(filter)` etc. (Shadertoy part from `shadertoyActive`) |
 | `displayPath(uri)` | workspace-relative path for UI text |
 
 Free functions in `resolve.ts`: `scopeAt`, `localsAt`, `enclosingFunction`,
@@ -250,6 +253,7 @@ interface ServerContext {
   getModel(uri): FileModel | undefined;
   getDocument(uri): TextDocument | undefined;
   onModelChanged(listener): Disposable; // = workspace.onDidChangeModel
+  onEnvironmentChanged(listener): Disposable; // environment / Shadertoy settings, or the client's shader-toy report changed
   onIndexed(listener): Disposable;      // initial index finished
   readonly indexed: boolean;
   clientCapabilities: { snippetSupport; markdown; workDoneProgress; semanticTokensRefresh; inlayHintRefresh };
@@ -272,6 +276,20 @@ server.ts pulls settings with `workspace/configuration` on start and on every
 and use `ctx.settings.onDidChange((s, prev) => ...)` to react (diagnostics
 re-validates, inlay hints ask the client to refresh, the workspace
 re-resolves includes when `includePaths` change).
+
+`shadertoy.enable` is `'auto' | 'on' | 'off'` (legacy booleans map to
+`on`/`off`). `environment` (`uniforms: { name, type, doc? }[]`,
+`defines: Record<string, string>`) is sanitized by `sanitizeEnvironment`
+(builtins/index.ts: names must be valid user identifiers per
+`core/keywords.ts#invalidIdentifierReason`, types builtin GLSL types, define
+values one line without a trailing `\`, so the glslang preamble always
+parses) and handed to `builtins.setEnvironment`; server.ts owns a
+private `Builtins` instance for this (tests use `getBuiltins()`, or
+`makeWorkspace(files, { environment })` for a private one). When either
+setting changes, or the client sends `glslLsp/clientEnvironment`
+`{ shaderToyInstalled }` (also accepted in `initializationOptions`),
+`ctx.onEnvironmentChanged` fires: semantic tokens and inlay hints refresh
+(`features/refresh.ts`) and diagnostics re-validate.
 
 ## How to add a feature
 
@@ -392,11 +410,14 @@ as `ResponseError`s so the client shows the reason. Document links cover
   `knownNames.ts` lists the few accepted names that are not real builtins.
 - `flatten.ts`: `planValidation` decides whether and how a file is
   validated (stage from `x.vert`, `x.vert.glsl`, `x.vs.glsl`, ...).
-  Shadertoy files (`mainImage`) get the shader-toy extension's
-  WebGL2 preamble (mirrors the parent workspace's `tools/flatten.py`):
+  Shadertoy files (`mainImage` where `shadertoyActive`) get a WebGL2
+  preamble matching the one the shader-toy VS Code extension prepends:
   uniforms, `iChannelN` sampler types from `#iChannelN::Type`, `#iKeyboard`
   stubs and `#iUniform` uniforms, plus a generated `main()`. Files with
-  `main` and `#version` pass through. Libraries are skipped. `flatten`
+  `main` and `#version` pass through. `environmentLines` adds the
+  environment's `#define`s and uniforms (after the Shadertoy preamble, or
+  right after the root's `#version`, `highp` in GLSL ES), skipping names the
+  unit declares itself or the Shadertoy preamble already has. Libraries are skipped. `flatten`
   inlines includes and returns a line map back to `(uri, line)`. Each inlined
   file is wrapped in a synthetic guard (`#ifndef GLSLLSP_INCLUDED_<n>`) so the
   preprocessor dedupes; a file already inlined outside any conditional is not
@@ -523,13 +544,16 @@ files:
   overloads generated from sampler families), `functionsMisc.ts`;
 - `variables.ts`, `typesData.ts`, `keywords.ts`, `layout.ts`,
   `directives.ts`, `macros.ts`;
-- `shadertoy.ts`: Shadertoy uniforms, `#iKeyboard` helpers and `Key_*`, and
-  the wallpaper-engine inputs.
+- `shadertoy.ts`: Shadertoy uniforms and entry points, and the shader-toy
+  extension's extras (`iMouseButton`, `#iKeyboard` helpers and `Key_*`).
 
 `index.ts` aggregates everything into the `Builtins` registry:
 `get(name, filter)` and `allFunctions` / `allVariables` / `allTypes` /
-`allDirectives(filter)`. The filter covers the shadertoy setting, required
-directives and the GLSL version. To add a builtin, add an entry to the
+`allDirectives(filter)`. The filter covers Shadertoy support, required
+directives and the GLSL version. `setEnvironment(env)` adds the configured
+environment uniforms (`environment: true` variables) and defines
+(`environment: true` macros), replacing the previous ones; an entry named
+like a builtin shadows it until the next call. To add a builtin, add an entry to the
 matching data file; `test/builtins.test.ts` checks that every entry has a
 doc, a category and unique overloads.
 
@@ -542,23 +566,34 @@ doc, a category and unique overloads.
   `test/completionHelpers.ts` holds a richer shared fixture project.
 - `test/fixtures/project`, `test/fixtures/diagnostics`: on-disk projects for
   `NodeFileSystem` tests.
-- Real-workspace tests are skipped when `../lygia` is absent:
+- Real-workspace tests run against a real shader workspace, e.g. one with
+  LYGIA (`test/realWorkspace.ts`): `GLSL_LSP_E2E_ROOT` (an error when it is
+  not an existing folder), else this repository's parent directory; either
+  only when it has a `lygia/` folder or `.glsl` files (top level or one
+  folder down). Without one they are skipped. They only read it:
   - `test/lygia.smoke.test.ts` parses every LYGIA file;
   - `test/diagnostics.realworld.test.ts` runs the fast checks and
-    glslangValidator over the user's shaders and expects no errors;
-  - `test/autoInclude.test.ts` times completion.
+    glslangValidator over the workspace's own shaders and expects no errors;
+  - `test/autoInclude.test.ts` times completion;
+  - `test/values.server.realworld*.test.ts` scan every position.
+- `test/environment.test.ts`: environment uniforms/defines through hover,
+  completion, typing, semantic tokens, the undeclared check and the glslang
+  preamble, and the Shadertoy auto/on/off detection.
 - `test/e2e/server.e2e.test.ts` builds `dist/server.js` and spawns it over
-  stdio with `vscode-jsonrpc`. It initializes on the parent shader workspace
-  (or `GLSL_LSP_E2E_ROOT`) and checks the following:
+  stdio with `vscode-jsonrpc`, with the real shader workspace as its folder.
+  Most checks use unsaved scratch buffers there. It checks the following:
   - index time is under the ceiling (15 s, `GLSL_LSP_E2E_INDEX_MS`);
-  - hover shows `//` docs and LYGIA YAML docs;
-  - completion with an auto-include edit;
+  - hover shows `//` docs and (with LYGIA) YAML docs;
+  - completion with an auto-include edit (with LYGIA);
   - definition, signature help, document symbols and semantic tokens;
-  - every shader in the workspace has zero error diagnostics;
+  - every entry shader in the workspace whose includes resolve has zero
+    error diagnostics;
   - a deliberate type error is reported by glslang;
-  - `glslLsp/valueTargets` on `main.glsl`: `#iUniform u_speed` with its range,
-    `u_tint` as a colorish `color3`, a float literal, a `vec2`, and pins that
-    follow inserted lines and go stale when their line is deleted.
+  - environment settings and the client's shader-toy report apply without
+    a restart;
+  - `glslLsp/valueTargets`: `#iUniform u_speed` with its range, `u_tint` as
+    a colorish `color3`, a float literal, a `vec2`, and pins that follow
+    inserted lines and go stale when their line is deleted.
 
   Set `GLSL_LSP_E2E_NO_BUILD=1` to test the minified bundle produced by
   `npm run package`.

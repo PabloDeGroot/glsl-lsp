@@ -72,7 +72,7 @@ export function scanDirectives(uri: string, tokens: readonly Token[], lines: Lin
     macros: [],
     globals: [],
     occurrences: [],
-    shadertoy: { channels: [], keyboard: false },
+    shadertoy: { channels: [], keyboard: false, directives: false },
   };
   const stack: ConditionalBlock[] = [];
 
@@ -180,14 +180,17 @@ export function scanDirectives(uri: string, tokens: readonly Token[], lines: Lin
       }
       case 'iKeyboard':
         scan.shadertoy.keyboard = true;
+        scan.shadertoy.directives = true;
         break;
       case 'iChannel': {
+        scan.shadertoy.directives = true;
         const m = /^iChannel(\d)$/.exec(name);
         const src = /^"([^"]*)"/.exec(args);
         if (m && src) scan.shadertoy.channels.push({ index: Number(m[1]), source: src[1], range: directive.range });
         break;
       }
       case 'iUniform': {
+        scan.shadertoy.directives = true;
         const sym = parseIUniform(uri, args, argsBase, lines, directive.range);
         if (sym) {
           sym.doc = docAbove(tokens, ti, lines) ?? trailingDoc(tokens, ti, lines, 'directive');

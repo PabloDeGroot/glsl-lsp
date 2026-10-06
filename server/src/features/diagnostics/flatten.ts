@@ -1,13 +1,17 @@
 // Builds the single translation unit handed to glslangValidator and keeps a
 // line map back to the original files.
 //
-// Shadertoy-style files (mainImage, no main) get a preamble with the
-// Shadertoy uniforms and a generated `main()`. #include lines are replaced by
-// the included file's text (each file once, like include guards would do),
-// shader-toy directives (#iUniform, #iChannel, #iKeyboard) are turned into
-// declarations or blanked. Every output line maps to (uri, line) so glslang
-// messages can be reported where the code was written.
+// Shadertoy-style files (mainImage, where Shadertoy support applies) get a
+// preamble with the Shadertoy uniforms and a generated `main()`. #include
+// lines are replaced by the included file's text (each file once, like
+// include guards would do), shader-toy directives (#iUniform, #iChannel,
+// #iKeyboard) are turned into declarations or blanked. The configured
+// environment (glslLsp.environment.*) adds its #defines and uniforms: after
+// the Shadertoy preamble, or right after the root file's #version line for
+// plain GLSL. Every output line maps to (uri, line) so glslang messages can
+// be reported where the code was written.
 
+import { splitArrayType, type Environment } from '../../builtins';
 import { normalizeUri, type FileModel, type Range, type Workspace } from '../../core';
 
 export type Stage = 'vert' | 'tesc' | 'tese' | 'geom' | 'frag' | 'comp';
@@ -75,23 +79,26 @@ export interface RunPlan {
   shadertoy: boolean;
 }
 
-/** Decides whether (and how) a file can be validated on its own. Library files return undefined. */
-export function planValidation(model: FileModel, shadertoySetting: boolean): RunPlan | undefined {
+/**
+ * Decides whether (and how) a file can be validated on its own. Library files
+ * return undefined. `shadertoy` says whether Shadertoy support applies to the
+ * file (Workspace.shadertoyActive): only then is a `mainImage` file wrapped;
+ * otherwise it is plain GLSL and needs its own `main` and `#version`.
+ */
+export function planValidation(model: FileModel, shadertoy: boolean): RunPlan | undefined {
   const hasMain = model.functions.some((f) => f.name === 'main' && !f.isPrototype);
   const hasMainImage = model.shadertoy.hasMainImage || model.functions.some((f) => f.name === 'mainImage' && !f.isPrototype);
   const stage = stageForUri(model.uri);
-  if (hasMainImage && (!hasMain || shadertoySetting)) {
-    return { stage: 'frag', shadertoy: true };
-  }
+  if (hasMainImage && shadertoy) return { stage: 'frag', shadertoy: true };
   if (hasMain && model.glslVersion) return { stage, shadertoy: false };
   return undefined;
 }
 
 // ---------------------------------------------------------------- preamble
 
-// Mirrors the stevensona shader-toy extension's WebGL2 preamble (see the
-// parent workspace's tools/flatten.py), plus Shadertoy's iFrameRate and
-// iChannelTime, so whatever the preview accepts validates here too.
+// Mirrors the preamble the stevensona shader-toy VS Code extension prepends in
+// WebGL2 mode, plus Shadertoy's iFrameRate and iChannelTime, so whatever the
+// preview accepts validates here too.
 const SHADERTOY_UNIFORMS = [
   'uniform vec3 iResolution;',
   'uniform float iTime;',
@@ -143,6 +150,37 @@ function buildPreamble(info: { keyboard: boolean; channelTypes: Map<number, stri
 
 const EPILOGUE = ['out vec4 _fragColor;', 'void main() { mainImage(_fragColor, gl_FragCoord.xy); }'];
 
+/** Names the Shadertoy preamble declares or defines (environment entries never redeclare them). */
+const SHADERTOY_PREAMBLE_NAMES: ReadonlySet<string> = new Set([
+  ...SHADERTOY_UNIFORMS.map((l) => /(\w+)(?:\[\d+\])?;$|^#define (\w+)/.exec(l)).map((m) => m?.[1] ?? m?.[2] ?? ''),
+  'iChannel0',
+  'iChannel1',
+  'iChannel2',
+  'iChannel3',
+]);
+
+/** Types that take a precision qualifier (GLSL ES needs one for a uniform declared before the file's `precision` statement). */
+const PRECISION_TYPE = /^(float|int|uint|[iu]?vec[234]|mat[234](x[234])?|[iu]?sampler\w+|[iu]?image\w+)$/;
+
+/**
+ * The environment's `#define` and `uniform` lines, skipping names the unit
+ * declares itself (`declared`) so nothing is defined twice.
+ */
+export function environmentLines(env: Environment, declared: ReadonlySet<string>, options: { es: boolean }): string[] {
+  const lines: string[] = [];
+  for (const [name, value] of Object.entries(env.defines)) {
+    if (declared.has(name)) continue;
+    lines.push(value ? `#define ${name} ${value}` : `#define ${name}`);
+  }
+  for (const u of env.uniforms) {
+    if (declared.has(u.name)) continue;
+    const { base, array } = splitArrayType(u.type);
+    const precision = options.es && PRECISION_TYPE.test(base) ? 'highp ' : '';
+    lines.push(`uniform ${precision}${base} ${u.name}${array};`);
+  }
+  return lines;
+}
+
 // ---------------------------------------------------------------- flattening
 
 const UNIFORM_TYPE_MAP: Record<string, string> = { color3: 'vec3', color4: 'vec4' };
@@ -154,6 +192,8 @@ function splitLines(text: string): string[] {
 export interface FlattenOptions {
   shadertoy: boolean;
   stage?: Stage;
+  /** Uniforms and defines of the shader runtime; defaults to the workspace builtins' environment. */
+  environment?: Environment;
 }
 
 const GUARD_PREFIX = 'GLSLLSP_INCLUDED_';
@@ -277,10 +317,25 @@ export function flatten(ws: Workspace, rootUriIn: string, options: FlattenOption
 
   const unclosedIn = (map: (LineOrigin | undefined)[]) => unclosed.map((o) => map.indexOf(o) + 1).filter((l) => l > 0);
   const stage = options.stage ?? stageForUri(rootUri);
+
+  // Names the unit declares itself: the environment must not redeclare them.
+  const env = options.environment ?? ws.builtins.environment;
+  const declared = new Set<string>(declaredUniforms);
+  for (const f of files) for (const sym of ws.getModel(f)?.symbols ?? []) if (sym.name) declared.add(sym.name);
+  if (options.shadertoy) for (const n of SHADERTOY_PREAMBLE_NAMES) declared.add(n);
+
   if (!options.shadertoy) {
+    const version = ws.getModel(rootUri)?.glslVersion;
+    const envLines = environmentLines(env, declared, { es: version?.profile === 'es' || version?.number === 100 });
+    if (envLines.length) {
+      // Right after the root's #version line (it must come first), else at the very top.
+      const at = version ? bodyMap.findIndex((o) => o?.uri === rootUri && o.line === version.range.end.line) + 1 : 0;
+      body.splice(at, 0, ...envLines);
+      bodyMap.splice(at, 0, ...envLines.map(() => undefined));
+    }
     return { source: body.join('\n') + '\n', lineMap: bodyMap, stage, shadertoy: false, files, unclosedConditionals: unclosedIn(bodyMap) };
   }
-  const preamble = buildPreamble({ keyboard, channelTypes });
+  const preamble = [...buildPreamble({ keyboard, channelTypes }), ...environmentLines(env, declared, { es: true })];
   const lineMap: (LineOrigin | undefined)[] = [...preamble.map(() => undefined), ...bodyMap, ...EPILOGUE.map(() => undefined)];
   const source = [...preamble, ...body, ...EPILOGUE].join('\n') + '\n';
   return { source, lineMap, stage: 'frag', shadertoy: true, files, unclosedConditionals: unclosedIn(lineMap) };

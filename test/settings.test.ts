@@ -3,11 +3,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultSettings, SettingsStore } from '../server/src/settings';
 
-/** Flattens `{ a: { b: 1 } }` to `{ 'a.b': 1 }` (arrays are leaves). */
+/** Flattens `{ a: { b: 1 } }` to `{ 'a.b': 1 }` (arrays and empty objects, i.e. free-form maps, are leaves). */
 function flatten(obj: Record<string, unknown>, prefix = ''): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(out, flatten(v as Record<string, unknown>, `${prefix}${k}.`));
+    if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) Object.assign(out, flatten(v as Record<string, unknown>, `${prefix}${k}.`));
     else out[prefix + k] = v;
   }
   return out;
@@ -38,6 +38,45 @@ describe('settings', () => {
     store.update({ inlayHints: { parameterNames: true }, colors: { mode: 'all' } });
     expect(store.get().inlayHints.parameterNames).toBe('literals');
     expect(store.get().colors.mode).toBe('all');
+  });
+
+  it('maps the legacy shadertoy booleans onto auto / on / off', () => {
+    const store = new SettingsStore();
+    expect(store.get().shadertoy.enable).toBe('auto');
+    store.update({ shadertoy: { enable: true } });
+    expect(store.get().shadertoy.enable).toBe('on');
+    store.update({ shadertoy: { enable: false } });
+    expect(store.get().shadertoy.enable).toBe('off');
+    store.update({ shadertoy: { enable: 'auto' } });
+    expect(store.get().shadertoy.enable).toBe('auto');
+    store.update({ shadertoy: { enable: 'sometimes' } });
+    expect(store.get().shadertoy.enable).toBe('auto');
+  });
+
+  it('keeps environment uniforms and defines, dropping malformed entries', () => {
+    const store = new SettingsStore();
+    store.update({
+      environment: {
+        uniforms: [
+          { name: 'iCursorTrail', type: 'vec2[8]', doc: 'Cursor *trail*.' },
+          { name: 'iGain', type: 'float' },
+          { name: 'bad name', type: 'float' },
+          { name: 'gl_Nope', type: 'float' },
+          { name: 'iNoType' },
+          { name: 'iGain', type: 'int' },
+          'junk',
+        ],
+        defines: { MY_RUNTIME: '', MAX_LIGHTS: '8', COUNT: 4, 'bad-name': '1', GL_ES: '1' },
+      },
+    });
+    const env = store.get().environment;
+    expect(env.uniforms).toEqual([
+      { name: 'iCursorTrail', type: 'vec2[8]', doc: 'Cursor *trail*.' },
+      { name: 'iGain', type: 'float' },
+    ]);
+    expect(env.defines).toEqual({ MY_RUNTIME: '', MAX_LIGHTS: '8', COUNT: '4' });
+    store.update({});
+    expect(store.get().environment).toEqual({ uniforms: [], defines: {} });
   });
 
   it('notifies listeners with the previous value', () => {

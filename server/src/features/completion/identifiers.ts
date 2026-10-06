@@ -189,13 +189,21 @@ export function identifierCompletions(env: CompletionEnv, model: FileModel, opts
       detail: builtinDetail(v),
       sortText: sortText(Rank.builtin, v.name),
       tags: deprecatedTags(v),
+      ...(v.environment ? { labelDetails: { description: 'environment' } } : {}),
       data: { k: 'b', u: uri, n: v.name } satisfies CompletionData,
     });
   }
   for (const m of builtins.macros.values()) {
     if (seen.has(m.name) || !builtins.passes(m, filter)) continue;
     seen.add(m.name);
-    items.push({ label: m.name, kind: CompletionItemKind.Constant, detail: builtinDetail(m), sortText: sortText(Rank.builtin, m.name), data: { k: 'b', u: uri, n: m.name } satisfies CompletionData });
+    items.push({
+      label: m.name,
+      kind: CompletionItemKind.Constant,
+      detail: builtinDetail(m),
+      sortText: sortText(Rank.builtin, m.name),
+      ...(m.environment ? { labelDetails: { description: 'environment' } } : {}),
+      data: { k: 'b', u: uri, n: m.name } satisfies CompletionData,
+    });
   }
 
   // ---- types and keywords (builtin data first for docs/snippets, then the core word sets)

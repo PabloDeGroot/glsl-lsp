@@ -112,6 +112,11 @@ export function describeBuiltin(entry: BuiltinEntry, activeOverload?: number): s
       parts.push(codeBlock(['#' + entry.name]));
       break;
   }
+  if ((entry.kind === 'variable' || entry.kind === 'macro') && entry.environment) {
+    parts.push(entry.kind === 'variable' ? '*Environment uniform*' : '*Environment define*');
+    if (entry.doc) parts.push(entry.doc);
+    return parts.join('\n\n');
+  }
   const notes: string[] = [];
   if ('shadertoy' in entry && entry.shadertoy) notes.push('Shadertoy');
   if ('requiresDirective' in entry && entry.requiresDirective) notes.push(`needs \`#${entry.requiresDirective}\``);

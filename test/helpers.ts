@@ -1,6 +1,6 @@
 // Test helpers: an in-memory workspace and cursor markers.
-import { getBuiltins } from '../server/src/builtins';
-import { MemoryFileSystem, parse, Workspace, type FileModel, type Position } from '../server/src/core';
+import { Builtins, builtinData, getBuiltins, type Environment } from '../server/src/builtins';
+import { MemoryFileSystem, parse, Workspace, type FileModel, type Position, type WorkspaceOptions } from '../server/src/core';
 
 export const ROOT = 'file:///ws';
 
@@ -8,10 +8,30 @@ export function uri(path: string): string {
   return `${ROOT}/${path}`;
 }
 
+export interface MakeWorkspaceOptions {
+  includePaths?: string[];
+  /** Environment uniforms / defines (gets a private Builtins instance). */
+  environment?: Partial<Environment>;
+  shadertoy?: WorkspaceOptions['shadertoy'];
+  shaderToyExtension?: boolean;
+}
+
 /** Builds a workspace from `{ 'path/in/ws.glsl': text }` and indexes it. */
-export function makeWorkspace(files: Record<string, string>, options: { includePaths?: string[] } = {}) {
+export function makeWorkspace(files: Record<string, string>, options: MakeWorkspaceOptions = {}) {
   const fs = new MemoryFileSystem(Object.fromEntries(Object.entries(files).map(([p, t]) => [uri(p), t])));
-  const ws = new Workspace({ fs, builtins: getBuiltins(), roots: [ROOT], includePaths: options.includePaths });
+  let builtins = getBuiltins();
+  if (options.environment) {
+    builtins = new Builtins(builtinData);
+    builtins.setEnvironment(options.environment);
+  }
+  const ws = new Workspace({
+    fs,
+    builtins,
+    roots: [ROOT],
+    includePaths: options.includePaths,
+    shadertoy: options.shadertoy,
+    shaderToyExtension: options.shaderToyExtension,
+  });
   ws.indexWorkspaceSync();
   return { ws, fs };
 }

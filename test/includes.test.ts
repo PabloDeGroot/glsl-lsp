@@ -54,7 +54,7 @@ describe('include resolution', () => {
 
 describe('uri helpers', () => {
   it('normalizes Windows file URIs', () => {
-    expect(normalizeUri('file:///C:/Pablo/x.glsl')).toBe(normalizeUri('file:///c%3A/Pablo/x.glsl'));
+    expect(normalizeUri('file:///C:/Users/x.glsl')).toBe(normalizeUri('file:///c%3A/Users/x.glsl'));
   });
 
   it('computes relative paths and refuses across drives', () => {

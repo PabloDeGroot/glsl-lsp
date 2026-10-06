@@ -63,6 +63,8 @@ export interface BuiltinVariable {
   /** For constants: the value, e.g. `65` for Key_A. */
   value?: string;
   deprecated?: string;
+  /** Declared by the user's runtime through glslLsp.environment.uniforms (not part of GLSL or Shadertoy). */
+  environment?: boolean;
 }
 
 export interface BuiltinType {
@@ -103,6 +105,8 @@ export interface BuiltinMacro {
   name: string;
   doc: string;
   value?: string;
+  /** Defined by the user's runtime through glslLsp.environment.defines. */
+  environment?: boolean;
 }
 
 export type BuiltinEntry = BuiltinFunction | BuiltinVariable | BuiltinType | BuiltinKeyword | BuiltinDirective | BuiltinMacro;

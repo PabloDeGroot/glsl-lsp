@@ -1,7 +1,8 @@
-// The Shadertoy environment (uniforms, entry points), the stevensona
-// shader-toy VS Code extension extras (#iKeyboard helpers, Key_* constants)
-// and the Wallpaper Engine inputs used by the sibling project. Everything here
-// is flagged `shadertoy: true` so glslLsp.shadertoy.enable can hide it.
+// The Shadertoy environment (uniforms, entry points) and the extras of the
+// stevensona shader-toy VS Code extension (iMouseButton, #iKeyboard helpers,
+// Key_* constants). Everything here is flagged `shadertoy: true`, so it is
+// only visible where Shadertoy support applies (glslLsp.shadertoy.enable).
+// Uniforms of other runtimes are configured with glslLsp.environment.uniforms.
 
 import { fn } from './define';
 import type { BuiltinFunction, BuiltinVariable } from './types';
@@ -35,16 +36,7 @@ export const shadertoyVariables: BuiltinVariable[] = [
   u('iDate', 'vec4', 'Current date: `x` year, `y` month (0 to 11), `z` day of month, `w` seconds since midnight.'),
   u('iSampleRate', 'float', 'Sound sample rate, typically `44100.0`.'),
 
-  // Wallpaper Engine inputs of the sibling project (see lib/engine.glsl).
-  u('iMousePrev', 'vec2', 'Wallpaper engine: the cursor position at the previous update, in pixels (same space as `fragCoord`).', { docUrl: undefined }),
-  u('iMouseButton', 'vec4', 'shader-toy extension uniform with the mouse button state. Not available in the wallpaper engine.', { docUrl: undefined }),
-  u('iScreenOffset', 'vec2', 'Wallpaper engine: offset in pixels of this screen within the whole desktop.', { docUrl: undefined }),
-  u('iScreenIndex', 'int', 'Wallpaper engine: index of the screen being rendered.', { docUrl: undefined }),
-  u('iScreenCount', 'int', 'Wallpaper engine: number of screens.', { docUrl: undefined }),
-  u('iWindowCount', 'int', 'Wallpaper engine: number of open windows reported, 0 to 16.', { docUrl: undefined }),
-  u('iWindowRects', 'vec4[16]', 'Wallpaper engine: window rectangles as `(x, y, width, height)` in pixels; `(x, y)` is the bottom-left corner, y up, the same space as `fragCoord`.', { docUrl: undefined }),
-  u('iWindowRectsPrev', 'vec4[16]', 'Wallpaper engine: each window\'s rectangle at the previous update, in the same layout as `iWindowRects`.', { docUrl: undefined }),
-  u('iWindowVelocities', 'vec2[16]', 'Wallpaper engine: velocity of each window in pixels per second.', { docUrl: undefined }),
+  u('iMouseButton', 'vec4', 'shader-toy extension: mouse button state. `x` is the left button and `y` the right button (non-zero while held). Not available on shadertoy.com.', { docUrl: undefined }),
 ];
 for (const e of shadertoyVariables) if (e.docUrl === undefined) delete e.docUrl;
 

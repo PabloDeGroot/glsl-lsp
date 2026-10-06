@@ -227,6 +227,18 @@ const INT_RE = /^[+-]?(?:0[xX][0-9a-fA-F]+|\d+)$/;
 const UINT_RE = /^[+-]?(?:0[xX][0-9a-fA-F]+|\d+)[uU]$/;
 const IDENT_RE = /^[A-Za-z_]\w*$/;
 const SWIZZLE_ACCESS_RE = /^([A-Za-z_]\w*)\.([xyzwrgbastpq]{1,4})$/;
+const INDEX_ACCESS_RE = /^([A-Za-z_]\w*)\s*\[[^[\]]*\](?:\.([xyzwrgbastpq]{1,4}))?$/;
+
+/** Type of `x[i]` for `x` of type `type`: array element, vector component or matrix column. */
+function elementType(type: string): string | undefined {
+  const arr = /^(\w+)\s*\[[^\]]*\]$/.exec(type);
+  if (arr) return arr[1];
+  const vec = /^([biud]?)vec[234]$/.exec(type);
+  if (vec) return { '': 'float', b: 'bool', i: 'int', u: 'uint', d: 'double' }[vec[1]];
+  const mat = /^(d?)mat([234])(?:x([234]))?$/.exec(type);
+  if (mat) return `${mat[1]}vec${mat[3] ?? mat[2]}`;
+  return undefined;
+}
 
 /** Best-effort type of an argument expression; undefined when unknown. */
 export function inferArgType(ws: Workspace, model: FileModel, arg: { start: number; end: number }): string | undefined {
@@ -250,6 +262,14 @@ export function inferArgType(ws: Workspace, model: FileModel, arg: { start: numb
   if (sw) {
     const base = identType(sw[1]);
     return base ? swizzleType(base, sw[2]) : undefined;
+  }
+  // `name[i]` and `name[i].xy`: an array element, a vector component or a matrix column.
+  const ix = INDEX_ACCESS_RE.exec(text);
+  if (ix) {
+    const base = identType(ix[1]);
+    const element = base ? elementType(base) : undefined;
+    if (!element || !ix[2]) return element;
+    return swizzleType(element, ix[2]);
   }
   // A whole call expression `name(...)`.
   const call = model.calls.find((c) => model.lines.offsetAt(c.nameRange.start) === arg.start && c.closeParen !== undefined && c.closeParen + 1 === arg.end);

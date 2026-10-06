@@ -1,5 +1,5 @@
 // Shared fixtures for completion / code action tests: an in-memory project
-// laid out like the user's shader repo (root shaders, lib/, lygia/...).
+// laid out like a typical shader workspace (root shaders, lib/, lygia/...).
 import type { CompletionItem, CompletionList, TextEdit } from 'vscode-languageserver/node';
 import { computeCompletion, type CompletionEnv } from '../server/src/features/completion';
 import { cursor, makeWorkspace, uri } from './helpers';

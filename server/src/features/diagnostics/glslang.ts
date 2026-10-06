@@ -103,6 +103,7 @@ export function mapGlslangMessages(messages: GlslangMessage[], ctx: MapContext):
     const { token, message } = splitToken(msg.text);
     const origin: LineOrigin | undefined = msg.line >= 1 ? lineMap[msg.line - 1] : undefined;
     // Generated lines (preamble / main wrapper) or no location: attach to the top of the root file.
+    // Without the Shadertoy wrapper they are the environment preamble and include guards.
     const target = origin ?? { uri: ctx.rootUri, line: 0 };
     const generated = !origin;
     const range = generated
@@ -116,7 +117,7 @@ export function mapGlslangMessages(messages: GlslangMessage[], ctx: MapContext):
       severity: severityOf(msg.severity),
       source: GLSLANG_SOURCE,
       code: 'glslang',
-      message: `${message}${token ? ` ('${token}')` : ''}${generated ? ' (in generated Shadertoy wrapper)' : ''}`,
+      message: `${message}${token ? ` ('${token}')` : ''}${generated ? (ctx.flattened.shadertoy ? ' (in generated Shadertoy wrapper)' : ' (in generated code)') : ''}`,
     });
 
     // Errors inside an included file: also summarize on the root's #include line.

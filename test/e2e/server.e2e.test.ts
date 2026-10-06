@@ -1,13 +1,15 @@
 // End-to-end smoke test: spawns the bundled server (dist/server.js) over
-// stdio, exactly as VS Code would, against the real shader workspace that
-// contains this repo (C:\Pablo\shader, or GLSL_LSP_E2E_ROOT). Skipped when
-// that workspace is not present.
+// stdio, exactly as VS Code would, with a real shader workspace as its
+// workspace folder (GLSL_LSP_E2E_ROOT, or this repository's parent directory
+// when it looks like one, e.g. a folder with LYGIA; see ../realWorkspace.ts).
+// Skipped without one. Most checks run on unsaved scratch buffers inside that
+// folder (never written to disk); LYGIA checks need a lygia/ folder there.
 //
 // Run just this file with: npx vitest run test/e2e
 
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, type MessageConnection } from 'vscode-jsonrpc/node';
 import type {
@@ -25,41 +27,36 @@ import type {
 } from 'vscode-languageserver-protocol';
 import { URI } from 'vscode-uri';
 import { VALUE_TARGETS_REQUEST, type ValueTargetsResult } from '../../shared/valuesProtocol';
+import { isEntryShader, REAL_LYGIA, REAL_ROOT, REPO, realShaderFiles } from '../realWorkspace';
 
-const REPO = resolve(__dirname, '..', '..');
-const ROOT = process.env.GLSL_LSP_E2E_ROOT ?? resolve(REPO, '..');
-const enabled = existsSync(join(ROOT, 'main.glsl')) && existsSync(join(ROOT, 'lib', 'common.glsl')) && existsSync(join(ROOT, 'lygia'));
+const ROOT = REAL_ROOT ?? '';
+const enabled = !!REAL_ROOT;
 
-/** Every shader the user previews (entry points), relative to ROOT. */
-const SHADERS = [
-  'main.glsl',
-  'channels.glsl',
-  'cubemap.glsl',
-  'mask.glsl',
-  'windows.glsl',
-  'probe.glsl',
-  'noise.glsl',
-  'shader.glsl',
-  'time.glsl',
-  'eyes-curl/noisemouse.glsl',
-  'eyes-curl/noisemouse_eyes.glsl',
-  'eyes-curl/noisemouse_smoke.glsl',
-  'eyes-fluid/common.glsl',
-  'eyes-fluid/eyes.glsl',
-  'eyes-fluid/image.glsl',
-  'eyes-fluid/pressure.glsl',
-  'eyes-fluid/smoke.glsl',
-  'eyes-fluid/velocity.glsl',
-  'eyes-network/eyes.glsl',
-  'glass/noisemouse_eyes.glsl',
-  'tiles/tiles.glsl',
-].filter((f) => existsSync(join(ROOT, f)));
+/** The workspace's own entry shaders (mainImage or main), relative to ROOT. */
+const SHADERS = enabled ? realShaderFiles().filter((f) => isEntryShader(readFileSync(join(ROOT, f), 'utf8'))) : [];
 
-/**
- * Errors that are real problems in the user's shaders, not false positives
- * (the include target does not exist in LYGIA).
- */
-const KNOWN_REAL_ERRORS: { file: string; message: RegExp }[] = [{ file: 'eyes-network/eyes.glsl', message: /windmill\.glsl/ }];
+/** Scratch buffers: opened in the server, never written to disk. */
+const SCRATCH = '__glsl_lsp_e2e__.glsl';
+const SCRATCH_TEXT = [
+  '// Centered and aspect corrected: y spans [-1, 1].',
+  'vec2 uvCentered(vec2 fragCoord, vec2 res) { return (fragCoord * 2.0 - res) / res.y; }',
+  '',
+  '// Rotation matrix.',
+  'mat2 rotate2d(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }',
+  '',
+  '// Overall speed.',
+  '#iUniform float u_speed = 1.0 in { 0.0, 4.0 }',
+  '#iUniform color3 u_tint = color3(1.0, 0.78, 0.55)',
+  '',
+  'void mainImage(out vec4 fragColor, in vec2 fragCoord) {',
+  '    vec2 uv = uvCentered(fragCoord, iResolution.xy);',
+  '    float t = iTime * u_speed;',
+  '    uv *= rotate2d(-t * 0.25);',
+  '    float d = length(uv - vec2(0.42, 0.26));',
+  '    fragColor = vec4(u_tint * d, 1.0);',
+  '}',
+  '',
+].join('\n');
 
 const uriOf = (rel: string) => URI.file(join(ROOT, rel)).toString();
 const textOf = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
@@ -81,6 +78,8 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
   const diagnostics = new Map<string, Diagnostic[]>();
   let lastDiagnosticsAt = 0;
   let indexMs = -1;
+  /** What workspace/configuration answers for the glslLsp section. */
+  let config: Record<string, unknown> = {};
 
   async function waitFor(cond: () => boolean, timeoutMs: number, what: string) {
     const t0 = Date.now();
@@ -94,6 +93,9 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     conn.sendNotification('textDocument/didOpen', { textDocument: { uri: uriOf(rel), languageId: 'glsl', version, text } });
   }
 
+  const hover = async (rel: string, position: { line: number; character: number }) =>
+    markdown(await conn.sendRequest<Hover | null>('textDocument/hover', { textDocument: { uri: uriOf(rel) }, position }));
+
   beforeAll(async () => {
     // GLSL_LSP_E2E_NO_BUILD=1 tests the dist/server.js already there (e.g. the minified `vscode:prepublish` build).
     if (!process.env.GLSL_LSP_E2E_NO_BUILD) execSync('node scripts/build.mjs', { cwd: REPO, stdio: 'ignore' });
@@ -105,7 +107,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
       diagnostics.set(p.uri, p.diagnostics);
       lastDiagnosticsAt = Date.now();
     });
-    conn.onRequest('workspace/configuration', (p: { items: unknown[] }) => p.items.map(() => ({})));
+    conn.onRequest('workspace/configuration', (p: { items: unknown[] }) => p.items.map(() => config));
     conn.onRequest('client/registerCapability', () => null);
     conn.onRequest('window/workDoneProgress/create', () => null);
     conn.onRequest('workspace/inlayHint/refresh', () => null);
@@ -116,7 +118,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     const init = await conn.sendRequest<{ capabilities: Record<string, unknown> }>('initialize', {
       processId: process.pid,
       rootUri,
-      workspaceFolders: [{ uri: rootUri, name: 'shader' }],
+      workspaceFolders: [{ uri: rootUri, name: 'shaders' }],
       capabilities: {
         workspace: { configuration: true, workspaceFolders: true },
         textDocument: {
@@ -125,6 +127,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
           publishDiagnostics: { relatedInformation: true },
         },
       },
+      initializationOptions: { shaderToyInstalled: false },
     });
     expect(init.capabilities.hoverProvider).toBe(true);
 
@@ -134,6 +137,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     indexMs = Date.now() - t0;
     const line = logs.find((l) => /^Indexed \d+ GLSL files/.test(l))!;
     console.log(`e2e: ${line} (wall clock from 'initialized': ${indexMs} ms)`);
+    open(SCRATCH, SCRATCH_TEXT);
   }, 60_000);
 
   afterAll(async () => {
@@ -159,104 +163,85 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     expect(indexMs).toBeLessThan(ceiling);
   });
 
-  it('hover shows // doc comments of a lib/ function', async () => {
-    const text = textOf('main.glsl');
-    open('main.glsl', text);
-    const h = await conn.sendRequest<Hover | null>('textDocument/hover', {
-      textDocument: { uri: uriOf('main.glsl') },
-      position: positionOf(text, 'uvCentered(fragCoord', 0, 2),
-    });
-    const md = markdown(h);
+  it('hover shows // doc comments', async () => {
+    const md = await hover(SCRATCH, positionOf(SCRATCH_TEXT, 'uvCentered(fragCoord', 0, 2));
     expect(md).toContain('vec2 uvCentered(vec2 fragCoord, vec2 res)');
     expect(md).toContain('Centered and aspect corrected');
   });
 
-  it('hover shows the YAML description of a LYGIA function', async () => {
-    const rel = 'eyes-curl/noisemouse_eyes.glsl';
-    const text = textOf(rel);
+  it.skipIf(!REAL_LYGIA)('hover shows the YAML description of a LYGIA function', async () => {
+    const rel = '__glsl_lsp_e2e_lygia__.glsl';
+    const text = '#include "lygia/generative/gnoise.glsl"\n\nvoid mainImage(out vec4 c, in vec2 f) { c = vec4(gnoise(f)); }\n';
     open(rel, text);
-    const body = text.indexOf('#include "../lib/common.glsl"');
-    const h = await conn.sendRequest<Hover | null>('textDocument/hover', {
-      textDocument: { uri: uriOf(rel) },
-      position: positionOf(text, 'gnoise(', body, 1),
-    });
-    const md = markdown(h);
+    const md = await hover(rel, positionOf(text, 'gnoise(f)', 0, 1));
     expect(md).toContain('gnoise');
     expect(md).toMatch(/Gradient Noise/i);
+    conn.sendNotification('textDocument/didClose', { textDocument: { uri: uriOf(rel) } });
   });
 
-  it('completion offers a not-yet-included LYGIA function with its #include edit', async () => {
-    const text = textOf('main.glsl');
-    const anchor = text.indexOf('\n', text.indexOf('float t = iTime')) + 1;
-    const edited = text.slice(0, anchor) + '    float vv = voron\n' + text.slice(anchor);
-    conn.sendNotification('textDocument/didChange', {
-      textDocument: { uri: uriOf('main.glsl'), version: 2 },
-      contentChanges: [{ text: edited }],
-    });
+  it.skipIf(!REAL_LYGIA)('completion offers a not-yet-included LYGIA function with its #include edit', async () => {
+    const anchor = SCRATCH_TEXT.indexOf('\n', SCRATCH_TEXT.indexOf('float t = iTime')) + 1;
+    const edited = SCRATCH_TEXT.slice(0, anchor) + '    float vv = voron\n' + SCRATCH_TEXT.slice(anchor);
+    conn.sendNotification('textDocument/didChange', { textDocument: { uri: uriOf(SCRATCH), version: 2 }, contentChanges: [{ text: edited }] });
     const position = positionOf(edited, 'float vv = voron', 0, 'float vv = voron'.length);
     const list = await conn.sendRequest<CompletionList | CompletionItem[] | null>('textDocument/completion', {
-      textDocument: { uri: uriOf('main.glsl') },
+      textDocument: { uri: uriOf(SCRATCH) },
       position,
       context: { triggerKind: 1 },
     });
     const items = Array.isArray(list) ? list : list?.items ?? [];
     const item = items.find((i) => i.label === 'voronoi');
     expect(item, `labels: ${items.slice(0, 20).map((i) => i.label).join(', ')}`).toBeDefined();
-    const edit = item!.additionalTextEdits?.[0];
-    expect(edit?.newText).toContain('#include "lygia/generative/voronoi.glsl"');
-    // Goes right after the last existing #include (lib/sdf.glsl).
-    expect(edit!.range.start.line).toBe(positionOf(text, '#include "lib/sdf.glsl"').line + 1);
+    expect(item!.additionalTextEdits?.[0]?.newText).toContain('#include "lygia/generative/voronoi.glsl"');
 
     const resolved = await conn.sendRequest<CompletionItem>('completionItem/resolve', item);
     const doc = typeof resolved.documentation === 'string' ? resolved.documentation : resolved.documentation?.value ?? '';
     expect(doc.toLowerCase()).toContain('voronoi');
 
-    conn.sendNotification('textDocument/didChange', {
-      textDocument: { uri: uriOf('main.glsl'), version: 3 },
-      contentChanges: [{ text }],
-    });
+    conn.sendNotification('textDocument/didChange', { textDocument: { uri: uriOf(SCRATCH), version: 3 }, contentChanges: [{ text: SCRATCH_TEXT }] });
   });
 
-  it('go to definition jumps into lib/*.glsl', async () => {
-    const text = textOf('main.glsl');
+  it('go to definition jumps to the declaration', async () => {
     const defs = await conn.sendRequest<Location | Location[] | LocationLink[] | null>('textDocument/definition', {
-      textDocument: { uri: uriOf('main.glsl') },
-      position: positionOf(text, 'uvCentered(fragCoord', 0, 3),
+      textDocument: { uri: uriOf(SCRATCH) },
+      position: positionOf(SCRATCH_TEXT, 'uvCentered(fragCoord', 0, 3),
     });
     const first = Array.isArray(defs) ? defs[0] : defs;
     const target = first && ('targetUri' in first ? first.targetUri : first.uri);
-    expect(target?.toLowerCase()).toBe(uriOf('lib/common.glsl').toLowerCase());
+    const range = first && ('targetSelectionRange' in first ? first.targetSelectionRange : first.range);
+    expect(target?.toLowerCase()).toBe(uriOf(SCRATCH).toLowerCase());
+    expect(range?.start.line).toBe(1);
   });
 
-  it('signature help lists the parameters of a lib/ function', async () => {
-    const text = textOf('main.glsl');
+  it('signature help lists the parameters of a user function', async () => {
     const help = await conn.sendRequest<SignatureHelp | null>('textDocument/signatureHelp', {
-      textDocument: { uri: uriOf('main.glsl') },
-      position: positionOf(text, 'uvCentered(fragCoord', 0, 'uvCentered('.length),
+      textDocument: { uri: uriOf(SCRATCH) },
+      position: positionOf(SCRATCH_TEXT, 'uvCentered(fragCoord', 0, 'uvCentered('.length),
     });
     expect(help?.signatures[help.activeSignature ?? 0]?.label).toContain('uvCentered(vec2 fragCoord');
   });
 
   it('document symbols and semantic tokens are non-empty', async () => {
-    const symbols = await conn.sendRequest<DocumentSymbol[]>('textDocument/documentSymbol', { textDocument: { uri: uriOf('main.glsl') } });
+    const symbols = await conn.sendRequest<DocumentSymbol[]>('textDocument/documentSymbol', { textDocument: { uri: uriOf(SCRATCH) } });
     expect(symbols.map((s) => s.name)).toContain('mainImage');
-    const tokens = await conn.sendRequest<SemanticTokens>('textDocument/semanticTokens/full', { textDocument: { uri: uriOf('main.glsl') } });
+    const tokens = await conn.sendRequest<SemanticTokens>('textDocument/semanticTokens/full', { textDocument: { uri: uriOf(SCRATCH) } });
     expect(tokens.data.length).toBeGreaterThan(50);
     expect(tokens.data.length % 5).toBe(0);
   });
 
   it('valid shaders produce no errors (fast checks + glslangValidator)', async () => {
-    for (const rel of SHADERS) if (rel !== 'main.glsl' && rel !== 'eyes-curl/noisemouse_eyes.glsl') open(rel);
+    for (const rel of SHADERS) open(rel);
     // Fast checks publish immediately, glslang a moment later: wait until every file is published and things go quiet.
-    await waitFor(() => SHADERS.every((r) => diagnostics.has(uriOf(r))), 30_000, 'diagnostics for every shader');
+    await waitFor(() => [SCRATCH, ...SHADERS].every((r) => diagnostics.has(uriOf(r))), 30_000, 'diagnostics for every shader');
     await waitFor(() => Date.now() - lastDiagnosticsAt > 2000, 30_000, 'diagnostics to settle');
 
     const problems: string[] = [];
-    for (const rel of SHADERS) {
-      for (const d of diagnostics.get(uriOf(rel)) ?? []) {
-        const known = KNOWN_REAL_ERRORS.some((k) => k.file === rel && k.message.test(d.message));
-        const isUndeclared = d.code === 'undeclared-identifier';
-        if (!known && (d.severity === 1 || isUndeclared)) problems.push(`${rel}:${d.range.start.line + 1} [${d.source}/${d.code ?? ''}] ${d.message}`);
+    for (const rel of [SCRATCH, ...SHADERS]) {
+      const ds = diagnostics.get(uriOf(rel)) ?? [];
+      // A missing include target is a real problem of that shader (reported as such), not a false positive.
+      if (ds.some((d) => d.code === 'unresolved-include')) continue;
+      for (const d of ds) {
+        if (d.severity === 1 || d.code === 'undeclared-identifier') problems.push(`${rel}:${d.range.start.line + 1} [${d.source}/${d.code ?? ''}] ${d.message}`);
       }
     }
     const warnings = SHADERS.flatMap((rel) => (diagnostics.get(uriOf(rel)) ?? []).filter((d) => d.severity !== 1).map((d) => `${rel}:${d.range.start.line + 1} ${d.message}`));
@@ -265,29 +250,64 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
   }, 90_000);
 
   it('glslangValidator errors are reported on the right line (unsaved buffer)', async () => {
-    const rel = '__e2e_scratch__.glsl';
-    const text = [
-      '#include "lib/common.glsl"',
-      '',
-      'void mainImage(out vec4 fragColor, in vec2 fragCoord) {',
-      '    vec2 uv = uvCentered(fragCoord, iResolution.xy);',
-      '    vec3 c = uv;',
-      '    fragColor = vec4(c, 1.0);',
-      '}',
-      '',
-    ].join('\n');
+    const rel = '__glsl_lsp_e2e_error__.glsl';
+    const text = ['void mainImage(out vec4 fragColor, in vec2 fragCoord) {', '    vec2 uv = fragCoord / iResolution.xy;', '    vec3 c = uv;', '    fragColor = vec4(c, 1.0);', '}', ''].join('\n');
     diagnostics.delete(uriOf(rel));
     open(rel, text);
     await waitFor(() => (diagnostics.get(uriOf(rel)) ?? []).some((d) => d.severity === 1), 20_000, 'glslang error');
     const errors = diagnostics.get(uriOf(rel))!.filter((d) => d.severity === 1);
-    expect(errors.map((d) => d.range.start.line)).toContain(4);
+    expect(errors.map((d) => d.range.start.line)).toContain(2);
     conn.sendNotification('textDocument/didClose', { textDocument: { uri: uriOf(rel) } });
   }, 30_000);
+
+  // ---------------------------------------------------------------- environment and Shadertoy mode
+
+  describe('environment settings and the shader-toy extension, without a restart', () => {
+    const rel = '__glsl_lsp_e2e_env__.glsl';
+    const text = ['#version 300 es', 'precision highp float;', 'out vec4 color;', 'void main() {', '    color = vec4(iCursorTrail[0], iTime, float(MAX_LIGHTS));', '}', ''].join('\n');
+    const undeclared = () => (diagnostics.get(uriOf(rel)) ?? []).filter((d) => d.code === 'undeclared-identifier').map((d) => (d.data as { name: string }).name).sort();
+
+    it('a plain GLSL file reports runtime names until they are configured', async () => {
+      diagnostics.delete(uriOf(rel));
+      open(rel, text);
+      await waitFor(() => undeclared().length === 3, 20_000, 'undeclared runtime names');
+      // A plain entry shader (it defines main) is not Shadertoy under 'auto': iTime is undeclared too.
+      expect(undeclared()).toEqual(['MAX_LIGHTS', 'iCursorTrail', 'iTime']);
+
+      config = { environment: { uniforms: [{ name: 'iCursorTrail', type: 'vec2[8]', doc: 'Last cursor positions.' }], defines: { MAX_LIGHTS: '8' } } };
+      conn.sendNotification('workspace/didChangeConfiguration', { settings: null });
+      await waitFor(() => undeclared().length === 1, 20_000, 'environment applied');
+      expect(undeclared()).toEqual(['iTime']);
+      const md = await hover(rel, positionOf(text, 'iCursorTrail', 0, 2));
+      expect(md).toContain('*Environment uniform*');
+      expect(md).toContain('Last cursor positions.');
+    }, 45_000);
+
+    it("'auto' Shadertoy mode follows the client's shader-toy extension report", async () => {
+      expect(await hover(rel, positionOf(text, 'iTime', 0, 1))).toBe('');
+      conn.sendNotification('glslLsp/clientEnvironment', { shaderToyInstalled: true });
+      expect(await hover(rel, positionOf(text, 'iTime', 0, 1))).toContain('float iTime');
+      await waitFor(() => undeclared().length === 0, 20_000, 'Shadertoy names declared with the extension installed');
+      conn.sendNotification('glslLsp/clientEnvironment', { shaderToyInstalled: false });
+      expect(await hover(rel, positionOf(text, 'iTime', 0, 1))).toBe('');
+      await waitFor(() => undeclared().length === 1, 20_000, 'iTime undeclared again');
+
+      config = { shadertoy: { enable: 'off' } };
+      conn.sendNotification('workspace/didChangeConfiguration', { settings: null });
+      await waitFor(() => undeclared().length === 3, 20_000, "Shadertoy 'off' and no environment");
+      expect(undeclared()).toEqual(['MAX_LIGHTS', 'iCursorTrail', 'iTime']);
+      config = {};
+      conn.sendNotification('workspace/didChangeConfiguration', { settings: null });
+      await waitFor(() => undeclared().length === 3, 20_000, 'defaults again');
+      expect(undeclared()).toEqual(['MAX_LIGHTS', 'iCursorTrail', 'iTime']);
+      conn.sendNotification('textDocument/didClose', { textDocument: { uri: uriOf(rel) } });
+    }, 45_000);
+  });
 
   // ---------------------------------------------------------------- Values panel (glslLsp/valueTargets)
 
   describe('Values panel: glslLsp/valueTargets', () => {
-    const rel = 'main.glsl';
+    const rel = SCRATCH;
     let version = 100;
     const sync = (text: string) => {
       version++;
@@ -301,7 +321,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     };
 
     it('#iUniform float u_speed: float with its `in { min, max }` range', async () => {
-      const text = textOf(rel);
+      const text = SCRATCH_TEXT;
       const v = sync(text);
       const r = await cursor(text, '#iUniform float u_speed', '#iUniform float u_'.length);
       expect(r.version).toBe(v);
@@ -320,8 +340,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     });
 
     it('#iUniform color3 u_tint: colorish vec3 with three editable components', async () => {
-      const text = textOf(rel);
-      const r = await cursor(text, 'color3(1.0, 0.78, 0.55)', 'color3('.length + 6);
+      const r = await cursor(SCRATCH_TEXT, 'color3(1.0, 0.78, 0.55)', 'color3('.length + 6);
       const t = r.cursor!;
       expect(t.kind).toBe('vec3');
       expect(t.name).toBe('u_tint');
@@ -333,8 +352,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     });
 
     it('a plain float literal inside an expression', async () => {
-      const text = textOf(rel);
-      const r = await cursor(text, 'rotate2d(-t * 0.25)', 'rotate2d(-t * 0.2'.length);
+      const r = await cursor(SCRATCH_TEXT, 'rotate2d(-t * 0.25)', 'rotate2d(-t * 0.2'.length);
       const t = r.cursor!;
       expect(t.kind).toBe('float');
       expect(t.uniform).toBeUndefined();
@@ -342,8 +360,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     });
 
     it('a vec2 constructor argument', async () => {
-      const text = textOf(rel);
-      const r = await cursor(text, 'vec2(0.42, 0.26)', 2);
+      const r = await cursor(SCRATCH_TEXT, 'vec2(0.42, 0.26)', 2);
       const t = r.cursor!;
       expect(t.kind).toBe('vec2');
       expect(t.components.map((c) => c.value)).toEqual([0.42, 0.26]);
@@ -351,7 +368,7 @@ describe.skipIf(!enabled)('language server end to end (real workspace)', () => {
     });
 
     it('pins re-resolve after lines are inserted above them, and go stale when removed', async () => {
-      const text = textOf(rel);
+      const text = SCRATCH_TEXT;
       const speed = (await cursor(text, '#iUniform float u_speed', '#iUniform float u_'.length)).cursor!;
       const lit = (await cursor(text, 'rotate2d(-t * 0.25)', 'rotate2d(-t * 0.2'.length)).cursor!;
       const anchors = [speed.anchor, lit.anchor];

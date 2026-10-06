@@ -181,10 +181,12 @@ describe('shadertoy environment', () => {
     }
     expect(b.variables.get('iMouse')!.doc).toMatch(/click/);
   });
-  it('has the wallpaper engine inputs used in the shader workspace', () => {
-    for (const n of ['iWindowCount', 'iWindowRects', 'iWindowRectsPrev', 'iWindowVelocities', 'iMousePrev', 'iScreenOffset', 'iScreenIndex', 'iScreenCount']) {
-      expect(b.variables.has(n), n).toBe(true);
-    }
+  it('has the shader-toy extension uniform iMouseButton and no other runtime-specific uniforms', () => {
+    expect(b.variables.get('iMouseButton')).toMatchObject({ type: 'vec4', shadertoy: true });
+    const uniforms = [...b.variables.values()].filter((v) => v.shadertoy && !v.name.startsWith('Key_')).map((v) => v.name);
+    expect(uniforms.sort()).toEqual(
+      ['iResolution', 'iTime', 'iTimeDelta', 'iFrameRate', 'iFrame', 'iChannelTime', 'iChannelResolution', 'iMouse', 'iMouseButton', 'iDate', 'iSampleRate', 'iChannel0', 'iChannel1', 'iChannel2', 'iChannel3'].sort(),
+    );
   });
   it('has entry points', () => {
     expect(formatBuiltinFunction(b.functions.get('mainImage')!)).toEqual(['void mainImage(out vec4 fragColor, vec2 fragCoord)']);
@@ -233,6 +235,27 @@ describe('filters', () => {
   it('filters by version', () => {
     expect(b.get('fma', { version: 330 })).toBeUndefined();
     expect(b.get('fma', { version: 450 })).toBeDefined();
+  });
+  it('adds environment uniforms and defines, and replaces them on the next setEnvironment', () => {
+    const env = new Builtins(builtinData);
+    env.setEnvironment({
+      uniforms: [
+        { name: 'iCursorTrail', type: 'vec2[8]', doc: 'Last cursor positions.' },
+        { name: 'iMouse', type: 'vec2', doc: 'Overridden.' },
+      ],
+      defines: { MY_RUNTIME: '', MAX_LIGHTS: '8' },
+    });
+    expect(env.get('iCursorTrail', { shadertoy: false })).toMatchObject({ kind: 'variable', type: 'vec2[8]', qualifiers: ['uniform'], environment: true });
+    expect(env.get('iMouse')).toMatchObject({ type: 'vec2', environment: true });
+    expect(env.get('MAX_LIGHTS')).toMatchObject({ kind: 'macro', value: '8', environment: true });
+    expect(env.environment.uniforms.map((u) => u.name)).toEqual(['iCursorTrail', 'iMouse']);
+    // the shared registry is untouched
+    expect(b.get('iCursorTrail')).toBeUndefined();
+
+    env.setEnvironment({ uniforms: [], defines: {} });
+    expect(env.get('iCursorTrail')).toBeUndefined();
+    expect(env.get('MY_RUNTIME')).toBeUndefined();
+    expect(env.get('iMouse')).toMatchObject({ type: 'vec4', shadertoy: true }); // the builtin is back
   });
   it('merges functions split over several data entries', () => {
     const merged = new Builtins({

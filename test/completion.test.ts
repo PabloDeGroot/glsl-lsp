@@ -257,7 +257,7 @@ describe('member completion', () => {
 
 describe('preprocessor completion', () => {
   it('offers directives as snippets after #', () => {
-    const { result } = complete('#|', { triggerCharacter: '#' });
+    const { result } = complete('#|\nvoid mainImage(out vec4 c, in vec2 f) { c = vec4(1.0); }\n', { triggerCharacter: '#' });
     const ls = labels(result);
     for (const d of ['include', 'define', 'ifdef', 'ifndef', 'if', 'else', 'elif', 'endif', 'version', 'extension', 'pragma', 'line', 'iChannel0', 'iChannel3', 'iUniform', 'iKeyboard']) {
       expect(ls).toContain('#' + d);
@@ -266,6 +266,13 @@ describe('preprocessor completion', () => {
     expect(inc.insertTextFormat).toBe(InsertTextFormat.Snippet);
     expect((inc.textEdit as { newText: string }).newText).toMatch(/^include "\$(1|\{1\})"$/);
     expect(inc.command?.command).toBe('editor.action.triggerSuggest');
+  });
+
+  it('offers shader-toy directives only where Shadertoy support applies (auto mode)', () => {
+    const plain = labels(complete('#|\nvoid main() {}\n', { triggerCharacter: '#' }).result);
+    expect(plain).toContain('#include');
+    expect(plain).not.toContain('#iChannel0');
+    expect(plain).not.toContain('#iUniform');
   });
 
   it('strips placeholders without snippet support', () => {

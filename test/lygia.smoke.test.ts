@@ -1,11 +1,13 @@
-// Parses every LYGIA .glsl file (if the library sits next to this repo, as in
-// the parent shader workspace) and checks the parser never throws and stays fast.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+// Parses every LYGIA .glsl file of a real shader workspace that has the
+// library (see realWorkspace.ts; skipped without one) and checks the parser
+// never throws and stays fast.
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from '../server/src/core/parser';
+import { REAL_LYGIA } from './realWorkspace';
 
-const LYGIA = resolve(__dirname, '..', '..', 'lygia');
+const LYGIA = REAL_LYGIA ?? '';
 
 function collect(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -17,7 +19,7 @@ function collect(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe.skipIf(!existsSync(LYGIA))('LYGIA smoke test', () => {
+describe.skipIf(!REAL_LYGIA)('LYGIA smoke test', () => {
   it('parses every .glsl file without throwing', () => {
     const files = collect(LYGIA);
     expect(files.length).toBeGreaterThan(100);

@@ -10,8 +10,10 @@ const DEBOUNCE_MS = 250;
 
 /**
  * Calls `refresh` (debounced) whenever an open document other than the edited
- * one is affected by a model change, when declared names change, and after
- * indexing. Returns `trigger` for other callers (e.g. setting changes).
+ * one is affected by a model change, when declared names change, after
+ * indexing and when the shader environment changes (environment uniforms and
+ * defines, Shadertoy mode). Returns `trigger` for other callers (e.g. setting
+ * changes).
  */
 export function onDependentsChanged(ctx: ServerContext, supported: () => boolean, refresh: () => unknown, name: string): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -31,5 +33,6 @@ export function onDependentsChanged(ctx: ServerContext, supported: () => boolean
     if (e.affected.some((u) => u !== e.uri && open.has(u))) trigger();
   });
   ctx.onIndexed(trigger);
+  ctx.onEnvironmentChanged(trigger);
   return trigger;
 }

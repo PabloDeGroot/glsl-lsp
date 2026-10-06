@@ -317,6 +317,8 @@ export interface ShadertoyInfo {
   channels: { index: number; source: string; range: Range }[];
   /** True when the file declares `#iKeyboard`. */
   keyboard: boolean;
+  /** Uses a shader-toy extension directive (`#iChannelN`, `#iUniform`, `#iKeyboard`). */
+  directives: boolean;
   /** Contains `mainImage`. */
   hasMainImage: boolean;
 }

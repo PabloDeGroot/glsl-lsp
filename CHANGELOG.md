@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.3.0
+
+glsl-lsp is now a standalone, generic GLSL extension: Shadertoy support is
+optional, and runtime-specific uniforms are configured instead of built in.
+
+- **Environment settings**:
+  - `glslLsp.environment.uniforms`: `{ name, type, doc? }` entries (arrays as
+    `vec4[16]`) for uniforms your shader runtime provides. They behave like
+    builtins: hover (signature, Markdown doc, *Environment uniform*),
+    completion, semantic tokens (`defaultLibrary`, `readonly`), member and
+    index typing (`trail[0].xy`), no undeclared-identifier report, and
+    declarations in the `glslangValidator` preamble (skipped when the shader
+    declares the name itself).
+  - `glslLsp.environment.defines`: `{ "NAME": "value" }` macros, known to
+    hover (*Environment define*), completion and the undeclared check, and
+    passed to `glslangValidator` as `#define`s.
+  - Changing either refreshes diagnostics and semantic highlighting without a
+    restart.
+- **Shadertoy support is optional**: `glslLsp.shadertoy.enable` is now
+  `auto` (default) | `on` | `off`; the legacy `true` / `false` mean `on` /
+  `off`.
+  - `auto` applies Shadertoy builtins, the shader-toy directives and the
+    `mainImage` wrapper to files that define `mainImage` or use `#iChannelN`,
+    `#iUniform` or `#iKeyboard` (and to the files they include or that
+    include them), or to every file when the shader-toy extension is
+    installed.
+  - `off` is plain GLSL: `mainImage` files are validated as ordinary GLSL
+    and Shadertoy names are reported as undeclared.
+- **GLSL: Show Shadertoy Preview** (command palette and editor title button)
+  runs the shader-toy extension's preview. It only shows when that extension
+  is installed; glsl-lsp does not depend on it.
+- Removed the extra uniforms of a specific custom runtime from the builtins
+  (`iMouseButton`, a shader-toy extension uniform, stays). Declare such
+  uniforms with `glslLsp.environment.uniforms`.
+- Signature help and member completion type indexed builtin arrays
+  (`iChannelResolution[0].xy`).
+- Environment entries that would break the `glslangValidator` preamble are
+  dropped: names that are keywords or reserved words, types that are not GLSL
+  types, and a trailing `\` in a define value (a line continuation).
+- `auto` mode: a plain entry shader (it defines `main()`) gets `iTime` and
+  other Shadertoy names reported as undeclared; libraries still may use them.
+- Legacy boolean `glslLsp.shadertoy.enable` values are rewritten to `on` /
+  `off` on startup.
+- Errors on generated lines of plain GLSL no longer mention a Shadertoy
+  wrapper.
+- Marketplace icon and more keywords.
+- Tests that use a real shader workspace read it from `GLSL_LSP_E2E_ROOT` (an
+  error when that folder does not exist), or use this repository's parent
+  folder; either only when it looks like one (a `lygia/` folder or `.glsl`
+  files), and skip otherwise. The end-to-end test runs on scratch buffers, so
+  any such workspace works. **Run Extension** opens `test/fixtures/project`.
+
 ## 0.2.0
 
 - **Values panel** (new Activity Bar view **GLSL › Values**): interactive
@@ -140,8 +192,9 @@ First release.
 - **Builtins**
   - GLSL 4.60 / ES 3.x functions, variables, types, qualifiers and
     directives, with docs and Khronos links.
-  - Shadertoy uniforms, `#iKeyboard` helpers and `Key_*` constants.
-  - Wallpaper-engine inputs.
+  - Shadertoy uniforms, `#iKeyboard` helpers and `Key_*` constants, plus a
+    few extra uniforms of a custom runtime (removed in 0.3.0 in favour of
+    `glslLsp.environment.uniforms`).
 - **Settings**:
   - `diagnostics.enable`, `diagnostics.undeclared`;
   - `inlayHints.parameterNames` (`none` / `literals` / `all`);

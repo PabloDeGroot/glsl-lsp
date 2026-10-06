@@ -8,13 +8,20 @@ import { uri } from './helpers';
 function fakeCtx(open: string[]) {
   const modelListeners: ((e: ModelChangeEvent) => void)[] = [];
   const indexedListeners: (() => void)[] = [];
+  const envListeners: (() => void)[] = [];
   const ctx = {
     documents: { all: () => open.map((u) => ({ uri: u })) },
     log: { debug: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     onModelChanged: (l: (e: ModelChangeEvent) => void) => (modelListeners.push(l), { dispose() {} }),
     onIndexed: (l: () => void) => (indexedListeners.push(l), { dispose() {} }),
+    onEnvironmentChanged: (l: () => void) => (envListeners.push(l), { dispose() {} }),
   } as unknown as ServerContext;
-  return { ctx, fire: (e: ModelChangeEvent) => modelListeners.forEach((l) => l(e)), indexed: () => indexedListeners.forEach((l) => l()) };
+  return {
+    ctx,
+    fire: (e: ModelChangeEvent) => modelListeners.forEach((l) => l(e)),
+    indexed: () => indexedListeners.forEach((l) => l()),
+    environment: () => envListeners.forEach((l) => l()),
+  };
 }
 
 describe('refresh on dependent changes', () => {

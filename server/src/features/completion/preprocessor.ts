@@ -105,7 +105,7 @@ export function macroNameCompletions(env: CompletionEnv, model: FileModel, offse
   for (const m of ws.builtins.macros.values()) {
     if (seen.has(m.name)) continue;
     seen.add(m.name);
-    items.push({ label: m.name, kind: CompletionItemKind.Constant, detail: 'builtin macro', sortText: sortText(Rank.builtin, m.name), data: { k: 'b', u: model.uri, n: m.name } satisfies CompletionData });
+    items.push({ label: m.name, kind: CompletionItemKind.Constant, detail: m.environment ? 'environment define' : 'builtin macro', sortText: sortText(Rank.builtin, m.name), data: { k: 'b', u: model.uri, n: m.name } satisfies CompletionData });
   }
   if (allowDefined) {
     items.push({ label: 'defined', kind: CompletionItemKind.Keyword, detail: 'defined(NAME)', sortText: sortText(Rank.keyword, 'defined') });

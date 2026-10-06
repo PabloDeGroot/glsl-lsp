@@ -36,12 +36,12 @@ export type GlslangOutcome =
 export async function computeGlslangDiagnostics(
   ws: Workspace,
   uriIn: string,
-  options: { shadertoy: boolean; run: Runner; signal?: AbortSignal },
+  options: { /** Shadertoy support for this file; default: the workspace decides (Workspace.shadertoyActive). */ shadertoy?: boolean; run: Runner; signal?: AbortSignal },
 ): Promise<GlslangOutcome> {
   const uri = normalizeUri(uriIn);
   const model = ws.getModel(uri);
   if (!model) return { kind: 'skipped' };
-  const plan = planValidation(model, options.shadertoy);
+  const plan = planValidation(model, options.shadertoy ?? ws.shadertoyActive(model));
   if (!plan) return { kind: 'skipped' };
   const flat = flatten(ws, uri, { shadertoy: plan.shadertoy, stage: plan.stage });
   const result = await options.run(flat.source, flat.stage, options.signal);
@@ -135,7 +135,6 @@ export function register(ctx: ServerContext): void {
     controllers.set(uri, controller);
     try {
       const outcome = await computeGlslangDiagnostics(ctx.workspace, uri, {
-        shadertoy: settings().shadertoy.enable,
         run: (s, st) => run(s, st, controller.signal),
         signal: controller.signal,
       });
@@ -233,6 +232,10 @@ export function register(ctx: ServerContext): void {
   });
 
   ctx.onIndexed(revalidateAll);
+  // The shader-toy extension was installed or removed (settings changes are handled below).
+  ctx.onEnvironmentChanged((reason) => {
+    if (reason === 'client') revalidateAll();
+  });
 
   ctx.settings.onDidChange((s, prev) => {
     if (s.diagnostics.glslang.path !== prev.diagnostics.glslang.path || s.diagnostics.glslang.enable !== prev.diagnostics.glslang.enable) {
