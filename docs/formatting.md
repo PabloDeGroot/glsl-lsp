@@ -20,7 +20,7 @@ Add this to your user or workspace `settings.json`:
 
 ```jsonc
 "[glsl]": {
-  "editor.defaultFormatter": "pablodegroot.glsl-lsp",
+  "editor.defaultFormatter": "pablodegroot.glsl-intellisense",
   "editor.formatOnSave": true,
   "editor.formatOnType": true
 }

@@ -1,8 +1,8 @@
-# GLSL Language Server
+# GLSL IntelliSense
 
 **Smart GLSL editing for VS Code: completion that writes your `#include`s, hover docs from your own comments, real compiler errors, and live sliders and color pickers for the numbers in your shaders.**
 
-[![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version-short/pablodegroot.glsl-lsp.svg)](https://marketplace.visualstudio.com/items?itemName=pablodegroot.glsl-lsp) [![License](https://img.shields.io/github/license/PabloDeGroot/glsl-lsp)](LICENSE)
+[![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version-short/pablodegroot.glsl-intellisense.svg)](https://marketplace.visualstudio.com/items?itemName=pablodegroot.glsl-intellisense) [![License](https://img.shields.io/github/license/PabloDeGroot/glsl-lsp)](LICENSE)
 
 <!-- TODO(owner): record images/hero.gif (drag a Values widget while a live shader preview updates)
      and make it the hero image here. Move autoinclude.gif down to the "Completion" feature below. -->
@@ -88,7 +88,7 @@ Shortcuts are written for Windows and Linux. On macOS, read Ctrl as Cmd (the nud
 
 ## Quick start
 
-1. Install **GLSL Language Server** from the Extensions view, or run `ext install pablodegroot.glsl-lsp` in Quick Open (Ctrl+P).
+1. Install **GLSL IntelliSense** from the Extensions view, or run `ext install pablodegroot.glsl-intellisense` in Quick Open (Ctrl+P).
 2. Open a `.glsl`, `.vert`, `.frag`, `.comp`, `.geom`, `.tesc`, `.tese`, `.vsh` or `.fsh` file ([and a few more](docs/configuration.md#file-extensions)). That's it.
 3. *Optional:* install `glslangValidator` for full compiler errors.
 
@@ -142,7 +142,7 @@ More: [Shadertoy in docs/configuration.md](docs/configuration.md#shadertoy-integ
 | `glslLsp.format.mode` | `conservative` | `conservative`, `opinionated` or `off` |
 | `glslLsp.inlayHints.parameterNames` | `literals` | `none`, `literals` or `all` |
 
-All 25 settings and every command are in [docs/configuration.md](docs/configuration.md), or search `@ext:pablodegroot.glsl-lsp` in the Settings editor.
+All 25 settings and every command are in [docs/configuration.md](docs/configuration.md), or search `@ext:pablodegroot.glsl-intellisense` in the Settings editor.
 
 ## FAQ
 
@@ -199,7 +199,7 @@ In a GLSL editor these keys nudge only when the cursor is on a number. Otherwise
 
 ```jsonc
 "[glsl]": {
-  "editor.defaultFormatter": "pablodegroot.glsl-lsp",
+  "editor.defaultFormatter": "pablodegroot.glsl-intellisense",
   "editor.formatOnSave": true
 }
 ```
@@ -211,7 +211,7 @@ See [docs/formatting.md](docs/formatting.md) for the modes and rules.
 
 Bug reports and ideas are welcome in the [issue tracker](https://github.com/PabloDeGroot/glsl-lsp/issues). To build, test or debug the extension, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-If the extension helps your shader work, a [rating on the Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodegroot.glsl-lsp&ssr=false#review-details) helps other GLSL developers find it.
+If the extension helps your shader work, a [rating on the Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodegroot.glsl-intellisense&ssr=false#review-details) helps other GLSL developers find it.
 
 ## License
 

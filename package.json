@@ -1,6 +1,6 @@
 {
-  "name": "glsl-lsp",
-  "displayName": "GLSL Language Server",
+  "name": "glsl-intellisense",
+  "displayName": "GLSL IntelliSense",
   "description": "GLSL completion, go to definition, rename and hover docs that follow your #includes, plus diagnostics, a formatter and live sliders and color pickers. For OpenGL, Vulkan, WebGL, LYGIA and Shadertoy.",
   "version": "0.4.0",
   "publisher": "pablodegroot",
@@ -166,7 +166,7 @@
       }
     ],
     "configuration": {
-      "title": "GLSL Language Server",
+      "title": "GLSL IntelliSense",
       "properties": {
         "glslLsp.includePaths": {
           "type": "array",

@@ -224,7 +224,7 @@ Set up a throwaway instance like this:
 ```sh
 npm run package
 D=/tmp/vsc-shots
-code --user-data-dir $D/data --extensions-dir $D/ext --install-extension glsl-lsp-0.4.0.vsix
+code --user-data-dir $D/data --extensions-dir $D/ext --install-extension glsl-intellisense-0.4.0.vsix
 code --user-data-dir $D/data --extensions-dir $D/ext --install-extension stevensona.shader-toy   # hero only
 # put the settings above in $D/data/User/settings.json, then:
 code --user-data-dir $D/data --extensions-dir $D/ext ~/path/to/demo-workspace
@@ -330,7 +330,7 @@ want one, capture `values-color.png` again with **Light Modern** as
   Settings → General → Social preview. It is what Discord, X, Mastodon and
   Slack show when someone shares the repository link.
 - Background `#1B1340` (the Marketplace banner color in `package.json`), the
-  icon `media/icon.png` and "GLSL Language Server" on the left, a crop of
+  icon `media/icon.png` and "GLSL IntelliSense" on the left, a crop of
   `values-color.png` or a frame of `hero.gif` on the right. Keep text and the
   icon at least 40 px from the edges; some sites crop.
 - Save the source as `images/social-preview.png` if you want it versioned.

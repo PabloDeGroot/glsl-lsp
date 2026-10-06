@@ -113,8 +113,8 @@ results into LSP responses.
 ## Package
 
 ```sh
-npm run package      # minified build, writes glsl-lsp-<version>.vsix
-code --install-extension glsl-lsp-<version>.vsix
+npm run package      # minified build, writes glsl-intellisense-<version>.vsix
+code --install-extension glsl-intellisense-<version>.vsix
 ```
 
 `npm run package` runs `vsce package --no-dependencies`: everything the

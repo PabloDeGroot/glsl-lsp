@@ -70,6 +70,9 @@ handling of untrusted folders.
   opened, not in every workspace.
 - The old boolean `glslLsp.shadertoy.enable` is migrated in user settings
   only; workspace settings files are no longer rewritten.
+- Published on the Marketplace as **GLSL IntelliSense**
+  (`pablodegroot.glsl-intellisense`). Settings and commands keep their
+  `glslLsp.*` names.
 - **Documentation**: a shorter README with screenshots; the reference
   material moved to `docs/` (features, diagnostics, formatting, Values panel,
   configuration) and the development notes to `CONTRIBUTING.md`.
